@@ -3,26 +3,12 @@ package handlers
 import (
 	"net/http"
 
+	"go_scraping_project/internal/api-gateway/types"
 	"go_scraping_project/internal/database"
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
-
-// Router handles all route registration for the API Gateway
-// It provides a centralized way to organize and configure all HTTP routes
-// for the web scraping system, including middleware setup and route grouping.
-type Router struct {
-	router *mux.Router
-	logger *logrus.Logger
-	db     *database.Queries
-
-	// Handlers
-	urlHandler     *URLHandler     // Handles URL management endpoints
-	dataHandler    *DataHandler    // Handles data retrieval endpoints
-	metricsHandler *MetricsHandler // Handles metrics and monitoring endpoints
-	adminHandler   *AdminHandler   // Handles admin and system management endpoints
-}
 
 // NewRouter creates a new router with all handlers and database queries
 // This function initializes the router and all handler instances with their
@@ -34,24 +20,24 @@ type Router struct {
 //   - db: sqlc-generated database queries for data persistence
 //
 // Returns:
-//   - *Router: Configured router instance ready for route setup
-func NewRouter(logger *logrus.Logger, db *database.Queries) *Router {
+//   - *types.Router: Configured router instance ready for route setup
+func NewRouter(logger *logrus.Logger, db *database.Queries) *types.Router {
 	router := mux.NewRouter()
 
 	// Initialize handlers with database queries
-	urlHandler := NewURLHandler(logger, db)
-	dataHandler := NewDataHandler(logger)
-	metricsHandler := NewMetricsHandler(logger)
-	adminHandler := NewAdminHandler(logger)
+	urlHandler := types.NewURLHandler(logger, db)
+	dataHandler := types.NewDataHandler(logger)
+	metricsHandler := types.NewMetricsHandler(logger)
+	adminHandler := types.NewAdminHandler(logger)
 
-	return &Router{
-		router:         router,
-		logger:         logger,
-		db:             db,
-		urlHandler:     urlHandler,
-		dataHandler:    dataHandler,
-		metricsHandler: metricsHandler,
-		adminHandler:   adminHandler,
+	return &types.Router{
+		Router:         router,
+		Logger:         logger,
+		DB:             db,
+		URLHandler:     urlHandler,
+		DataHandler:    dataHandler,
+		MetricsHandler: metricsHandler,
+		AdminHandler:   adminHandler,
 	}
 }
 
@@ -77,27 +63,27 @@ func NewRouter(logger *logrus.Logger, db *database.Queries) *Router {
 //   - Logging middleware for request tracking
 //   - CORS middleware for cross-origin support
 //   - Recovery middleware for panic handling
-func (r *Router) SetupRoutes() http.Handler {
+func SetupRoutes(router *types.Router) http.Handler {
 	// Add middleware
-	r.router.Use(loggingMiddleware(r.logger))
-	r.router.Use(corsMiddleware())
-	r.router.Use(recoveryMiddleware(r.logger))
+	router.Router.Use(loggingMiddleware(router.Logger))
+	router.Router.Use(corsMiddleware())
+	router.Router.Use(recoveryMiddleware(router.Logger))
 
 	// Health check endpoints
-	r.router.HandleFunc("/health", healthHandler).Methods("GET")
-	r.router.HandleFunc("/ready", readinessHandler).Methods("GET")
-	r.router.HandleFunc("/live", livenessHandler).Methods("GET")
+	router.Router.HandleFunc("/health", healthHandler).Methods("GET")
+	router.Router.HandleFunc("/ready", readinessHandler).Methods("GET")
+	router.Router.HandleFunc("/live", livenessHandler).Methods("GET")
 
 	// API v1 routes
-	apiV1 := r.router.PathPrefix("/api/v1").Subrouter()
+	apiV1 := router.Router.PathPrefix("/api/v1").Subrouter()
 
 	// Setup route groups
-	r.setupURLRoutes(apiV1)
-	r.setupDataRoutes(apiV1)
-	r.setupMetricsRoutes(apiV1)
-	r.setupAdminRoutes(apiV1)
+	setupURLRoutes(apiV1, router.URLHandler)
+	setupDataRoutes(apiV1, router.DataHandler)
+	setupMetricsRoutes(apiV1, router.MetricsHandler)
+	setupAdminRoutes(apiV1, router.AdminHandler)
 
-	return r.router
+	return router.Router
 }
 
 // setupURLRoutes configures URL management routes
@@ -116,16 +102,17 @@ func (r *Router) SetupRoutes() http.Handler {
 //
 // Parameters:
 //   - apiV1: Subrouter for API v1 endpoints
-func (r *Router) setupURLRoutes(apiV1 *mux.Router) {
+//   - urlHandler: URL handler instance
+func setupURLRoutes(apiV1 *mux.Router, urlHandler *types.URLHandler) {
 	urlRoutes := apiV1.PathPrefix("/urls").Subrouter()
 
-	urlRoutes.HandleFunc("", r.urlHandler.CreateURL).Methods("POST")
-	urlRoutes.HandleFunc("", r.urlHandler.ListURLs).Methods("GET")
-	urlRoutes.HandleFunc("/{id}", r.urlHandler.GetURL).Methods("GET")
-	urlRoutes.HandleFunc("/{id}", r.urlHandler.UpdateURL).Methods("PUT")
-	urlRoutes.HandleFunc("/{id}", r.urlHandler.DeleteURL).Methods("DELETE")
-	urlRoutes.HandleFunc("/{id}/scrape", r.urlHandler.TriggerScrape).Methods("POST")
-	urlRoutes.HandleFunc("/{id}/status", r.urlHandler.GetURLStatus).Methods("GET")
+	urlRoutes.HandleFunc("", urlHandler.CreateURL).Methods("POST")
+	urlRoutes.HandleFunc("", urlHandler.ListURLs).Methods("GET")
+	urlRoutes.HandleFunc("/{id}", urlHandler.GetURL).Methods("GET")
+	urlRoutes.HandleFunc("/{id}", urlHandler.UpdateURL).Methods("PUT")
+	urlRoutes.HandleFunc("/{id}", urlHandler.DeleteURL).Methods("DELETE")
+	urlRoutes.HandleFunc("/{id}/scrape", urlHandler.TriggerScrape).Methods("POST")
+	urlRoutes.HandleFunc("/{id}/status", urlHandler.GetURLStatus).Methods("GET")
 }
 
 // setupDataRoutes configures data retrieval routes
@@ -140,12 +127,13 @@ func (r *Router) setupURLRoutes(apiV1 *mux.Router) {
 //
 // Parameters:
 //   - apiV1: Subrouter for API v1 endpoints
-func (r *Router) setupDataRoutes(apiV1 *mux.Router) {
+//   - dataHandler: Data handler instance
+func setupDataRoutes(apiV1 *mux.Router, dataHandler *types.DataHandler) {
 	dataRoutes := apiV1.PathPrefix("/data").Subrouter()
 
-	dataRoutes.HandleFunc("", r.dataHandler.ListData).Methods("GET")
-	dataRoutes.HandleFunc("/{url_id}", r.dataHandler.GetDataByURL).Methods("GET")
-	dataRoutes.HandleFunc("/export", r.dataHandler.ExportData).Methods("GET")
+	dataRoutes.HandleFunc("", dataHandler.ListData).Methods("GET")
+	dataRoutes.HandleFunc("/{url_id}", dataHandler.GetDataByURL).Methods("GET")
+	dataRoutes.HandleFunc("/export", dataHandler.ExportData).Methods("GET")
 }
 
 // setupMetricsRoutes configures metrics routes
@@ -159,11 +147,12 @@ func (r *Router) setupDataRoutes(apiV1 *mux.Router) {
 //
 // Parameters:
 //   - apiV1: Subrouter for API v1 endpoints
-func (r *Router) setupMetricsRoutes(apiV1 *mux.Router) {
+//   - metricsHandler: Metrics handler instance
+func setupMetricsRoutes(apiV1 *mux.Router, metricsHandler *types.MetricsHandler) {
 	metricsRoutes := apiV1.PathPrefix("/metrics").Subrouter()
 
-	metricsRoutes.HandleFunc("/urls/{id}", r.metricsHandler.GetURLMetrics).Methods("GET")
-	metricsRoutes.HandleFunc("/system", r.metricsHandler.GetSystemMetrics).Methods("GET")
+	metricsRoutes.HandleFunc("/urls/{id}", metricsHandler.GetURLMetrics).Methods("GET")
+	metricsRoutes.HandleFunc("/system", metricsHandler.GetSystemMetrics).Methods("GET")
 }
 
 // setupAdminRoutes configures admin routes
@@ -180,33 +169,16 @@ func (r *Router) setupMetricsRoutes(apiV1 *mux.Router) {
 //
 // Parameters:
 //   - apiV1: Subrouter for API v1 endpoints
-func (r *Router) setupAdminRoutes(apiV1 *mux.Router) {
+//   - adminHandler: Admin handler instance
+func setupAdminRoutes(apiV1 *mux.Router, adminHandler *types.AdminHandler) {
 	adminRoutes := apiV1.PathPrefix("/admin").Subrouter()
 
 	// Dead letter queue management
-	adminRoutes.HandleFunc("/dead-letter", r.adminHandler.ListDeadLetterMessages).Methods("GET")
-	adminRoutes.HandleFunc("/dead-letter/bulk-retry", r.adminHandler.BulkRetryDeadLetterMessages).Methods("POST")
-	adminRoutes.HandleFunc("/dead-letter/{id}/retry", r.adminHandler.RetryDeadLetterMessage).Methods("POST")
-	adminRoutes.HandleFunc("/dead-letter/{id}", r.adminHandler.DeleteDeadLetterMessage).Methods("DELETE")
+	adminRoutes.HandleFunc("/dead-letter", adminHandler.ListDeadLetterMessages).Methods("GET")
+	adminRoutes.HandleFunc("/dead-letter/bulk-retry", adminHandler.BulkRetryDeadLetterMessages).Methods("POST")
+	adminRoutes.HandleFunc("/dead-letter/{id}/retry", adminHandler.RetryDeadLetterMessage).Methods("POST")
+	adminRoutes.HandleFunc("/dead-letter/{id}", adminHandler.DeleteDeadLetterMessage).Methods("DELETE")
 
 	// System health
-	adminRoutes.HandleFunc("/health", r.adminHandler.GetSystemHealth).Methods("GET")
-}
-
-// GetRouter returns the underlying mux.Router for additional customization if needed
-//
-// Purpose: Provides access to the underlying gorilla/mux router for advanced
-// customization, such as adding custom middleware, route handlers, or
-// implementing additional routing logic not covered by the standard setup.
-//
-// Returns:
-//   - *mux.Router: The underlying gorilla/mux router instance
-//
-// Example Usage:
-//
-//	router := handlerRouter.GetRouter()
-//	router.Use(customMiddleware)
-//	router.HandleFunc("/custom", customHandler)
-func (r *Router) GetRouter() *mux.Router {
-	return r.router
+	adminRoutes.HandleFunc("/health", adminHandler.GetSystemHealth).Methods("GET")
 }

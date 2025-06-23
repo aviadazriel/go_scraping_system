@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"go_scraping_project/internal/api-gateway/models"
 )
 
 // HealthResponse represents the health check response structure.
@@ -24,7 +26,7 @@ type HealthResponse struct {
 // This endpoint performs a quick assessment of the service's health status,
 // including dependency checks for database and Kafka connectivity.
 //
-// Response: HealthResponse (200 OK)
+// Response: models.HealthResponse (200 OK)
 //
 // Example Usage:
 //
@@ -43,10 +45,10 @@ type HealthResponse struct {
 //	  }
 //	}
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	response := HealthResponse{
+	response := models.HealthResponse{
 		Status:    "healthy",
-		Service:   "api-gateway",
 		Timestamp: time.Now().Format(time.RFC3339),
+		Uptime:    "24h30m",
 		Version:   "1.0.0",
 		Checks: map[string]string{
 			"database": "healthy",
@@ -65,7 +67,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 // This endpoint verifies that all dependencies are available and the service
 // is fully initialized and ready to handle requests.
 //
-// Response: HealthResponse (200 OK) or (503 Service Unavailable)
+// Response: models.HealthResponse (200 OK) or (503 Service Unavailable)
 //
 // Example Usage:
 //
@@ -75,16 +77,16 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 //
 //	{
 //	  "status": "ready",
-//	  "service": "api-gateway",
 //	  "timestamp": "2024-01-01T00:00:00Z"
 //	}
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO: Check if all dependencies are ready
 	// For now, always return ready
-	response := HealthResponse{
+	response := models.HealthResponse{
 		Status:    "ready",
-		Service:   "api-gateway",
 		Timestamp: time.Now().Format(time.RFC3339),
+		Uptime:    "24h30m",
+		Version:   "1.0.0",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -98,7 +100,7 @@ func readinessHandler(w http.ResponseWriter, r *http.Request) {
 // This endpoint verifies that the service is running and can respond to requests.
 // If this endpoint fails repeatedly, Kubernetes will restart the pod.
 //
-// Response: HealthResponse (200 OK) or (503 Service Unavailable)
+// Response: models.HealthResponse (200 OK) or (503 Service Unavailable)
 //
 // Example Usage:
 //
@@ -108,16 +110,16 @@ func readinessHandler(w http.ResponseWriter, r *http.Request) {
 //
 //	{
 //	  "status": "alive",
-//	  "service": "api-gateway",
 //	  "timestamp": "2024-01-01T00:00:00Z"
 //	}
 func livenessHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO: Check if the service is alive and responsive
 	// For now, always return alive
-	response := HealthResponse{
+	response := models.HealthResponse{
 		Status:    "alive",
-		Service:   "api-gateway",
 		Timestamp: time.Now().Format(time.RFC3339),
+		Uptime:    "24h30m",
+		Version:   "1.0.0",
 	}
 
 	w.Header().Set("Content-Type", "application/json")

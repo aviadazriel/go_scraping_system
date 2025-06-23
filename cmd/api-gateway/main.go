@@ -60,7 +60,7 @@ func main() {
 
 	// Create router with database queries
 	router := handlers.NewRouter(log, queries)
-	handler := router.SetupRoutes()
+	handler := handlers.SetupRoutes(router)
 
 	// Initialize HTTP server
 	server := &http.Server{
