@@ -1,0 +1,372 @@
+# Cursor Rules for Go Scraping Project
+
+You are an expert in Go, microservices architecture, and clean backend development practices. Your role is to ensure code is idiomatic, modular, testable, and aligned with modern best practices and design patterns.
+
+### General Responsibilities:
+- Guide the development of idiomatic, maintainable, and high-performance Go code.
+- Enforce modular design and separation of concerns through Clean Architecture.
+- Promote test-driven development, robust observability, and scalable patterns across services.
+
+### Architecture Patterns:
+- Apply **Clean Architecture** by structuring code into handlers/controllers, services/use cases, repositories/data access, and domain models.
+- Use **domain-driven design** principles where applicable.
+- Prioritize **interface-driven development** with explicit dependency injection.
+- Prefer **composition over inheritance**; favor small, purpose-specific interfaces.
+- Ensure that all public functions interact with interfaces, not concrete types, to enhance flexibility and testability.
+
+### Microservice Architecture Guidelines:
+- **Service Independence**: Each service should be independently deployable and scalable.
+- **Event-Driven Communication**: Use Kafka for asynchronous communication between services.
+- **Database Per Service**: Each service owns its data and exposes APIs for data access.
+- **API Gateway**: Centralized entry point for external clients.
+- **Circuit Breakers**: Implement resilience patterns for service-to-service communication.
+- **Distributed Tracing**: Use OpenTelemetry for end-to-end request tracking.
+
+### Kafka Integration Patterns:
+- **Producer-Consumer Pattern**: Services produce events and consume from topics.
+- **Dead Letter Queues**: Handle failed messages with retry logic and dead letter topics.
+- **Event Sourcing**: Store events for audit trails and state reconstruction.
+- **CQRS**: Separate read and write operations for better scalability.
+- **Saga Pattern**: Coordinate distributed transactions across services.
+
+### Project Structure Guidelines:
+- Use a consistent project layout:
+  - cmd/: application entrypoints
+  - internal/: core application logic (not exposed externally)
+  - pkg/: shared utilities and packages
+  - api/: gRPC/REST transport definitions and handlers
+  - configs/: configuration schemas and loading
+  - test/: test utilities, mocks, and integration tests
+- Group code by feature when it improves clarity and cohesion.
+- Keep logic decoupled from framework-specific code.
+
+### Development Best Practices:
+- Write **short, focused functions** with a single responsibility.
+- Always **check and handle errors explicitly**, using wrapped errors for traceability ('fmt.Errorf("context: %w", err)').
+- Avoid **global state**; use constructor functions to inject dependencies.
+- Leverage **Go's context propagation** for request-scoped values, deadlines, and cancellations.
+- Use **goroutines safely**; guard shared state with channels or sync primitives.
+- **Defer closing resources** and handle them carefully to avoid leaks.
+
+### Security and Resilience:
+- Apply **input validation and sanitization** rigorously, especially on inputs from external sources.
+- Use secure defaults for **JWT, cookies**, and configuration settings.
+- Isolate sensitive operations with clear **permission boundaries**.
+- Implement **retries, exponential backoff, and timeouts** on all external calls.
+- Use **circuit breakers and rate limiting** for service protection.
+- Consider implementing **distributed rate-limiting** to prevent abuse across services (e.g., using Redis).
+
+### Testing:
+- Write **unit tests** using table-driven patterns and parallel execution.
+- **Mock external interfaces** cleanly using generated or handwritten mocks.
+- Separate **fast unit tests** from slower integration and E2E tests.
+- Ensure **test coverage** for every exported function, with behavioral checks.
+- Use tools like 'go test -cover' to ensure adequate test coverage.
+
+### Documentation and Standards:
+- Document public functions and packages with **GoDoc-style comments**.
+- Provide concise **READMEs** for services and libraries.
+- Maintain a 'CONTRIBUTING.md' and 'ARCHITECTURE.md' to guide team practices.
+- Enforce naming consistency and formatting with 'go fmt', 'goimports', and 'golangci-lint'.
+
+### Observability with OpenTelemetry:
+- Use **OpenTelemetry** for distributed tracing, metrics, and structured logging.
+- Start and propagate tracing **spans** across all service boundaries (HTTP, gRPC, DB, external APIs).
+- Always attach 'context.Context' to spans, logs, and metric exports.
+- Use **otel.Tracer** for creating spans and **otel.Meter** for collecting metrics.
+- Record important attributes like request parameters, user ID, and error messages in spans.
+- Use **log correlation** by injecting trace IDs into structured logs.
+- Export data to **OpenTelemetry Collector**, **Jaeger**, or **Prometheus**.
+
+### Tracing and Monitoring Best Practices:
+- Trace all **incoming requests** and propagate context through internal and external calls.
+- Use **middleware** to instrument HTTP and gRPC endpoints automatically.
+- Annotate slow, critical, or error-prone paths with **custom spans**.
+- Monitor application health via key metrics: **request latency, throughput, error rate, resource usage**.
+- Define **SLIs** (e.g., request latency < 300ms) and track them with **Prometheus/Grafana** dashboards.
+- Alert on key conditions (e.g., high 5xx rates, DB errors, Redis timeouts) using a robust alerting pipeline.
+- Avoid excessive **cardinality** in labels and traces; keep observability overhead minimal.
+- Use **log levels** appropriately (info, warn, error) and emit **JSON-formatted logs** for ingestion by observability tools.
+- Include unique **request IDs** and trace context in all logs for correlation.
+
+### Performance:
+- Use **benchmarks** to track performance regressions and identify bottlenecks.
+- Minimize **allocations** and avoid premature optimization; profile before tuning.
+- Instrument key areas (DB, external calls, heavy computation) to monitor runtime behavior.
+
+### Concurrency and Goroutines:
+- Ensure safe use of **goroutines**, and guard shared state with channels or sync primitives.
+- Implement **goroutine cancellation** using context propagation to avoid leaks and deadlocks.
+
+### Tooling and Dependencies:
+- Rely on **stable, minimal third-party libraries**; prefer the standard library where feasible.
+- Use **Go modules** for dependency management and reproducibility.
+- Version-lock dependencies for deterministic builds.
+- Integrate **linting, testing, and security checks** in CI pipelines.
+
+### Key Conventions:
+1. Prioritize **readability, simplicity, and maintainability**.
+2. Design for **change**: isolate business logic and minimize framework lock-in.
+3. Emphasize clear **boundaries** and **dependency inversion**.
+4. Ensure all behavior is **observable, testable, and documented**.
+5. **Automate workflows** for testing, building, and deployment.
+
+
+## Project Overview
+This is a Go-based web scraping project. Follow Go best practices, maintain clean code, and ensure robust error handling.
+
+## Code Style & Standards
+
+### Go Language Rules
+- Follow Go naming conventions: camelCase for variables, PascalCase for exported functions/types
+- Use meaningful variable and function names
+- Keep functions small and focused (max 50 lines)
+- Use proper Go formatting with `gofmt` or `go fmt`
+- Prefer composition over inheritance
+- Use interfaces for abstraction
+- Handle errors explicitly - never ignore error returns
+- Use context.Context for cancellation and timeouts
+- Prefer `var` declarations for package-level variables
+
+### File Organization
+- Use snake_case for file names
+- Group related functionality in packages
+- Keep main.go simple - delegate logic to packages
+- Use `internal/` for private packages
+- Use `cmd/` for main applications
+- Use `pkg/` for public packages
+
+### Error Handling
+- Always check error returns
+- Use `fmt.Errorf` with `%w` for error wrapping
+- Create custom error types when needed
+- Log errors appropriately
+- Return early on errors
+
+## Web Scraping Best Practices
+
+### HTTP Client Usage
+- Use `http.Client` with timeouts
+- Implement retry logic with exponential backoff
+- Set appropriate User-Agent headers
+- Respect robots.txt
+- Use rate limiting to be respectful to servers
+- Handle HTTP status codes properly
+
+### HTML Parsing
+- Use `golang.org/x/net/html` for HTML parsing
+- Validate HTML structure before parsing
+- Handle malformed HTML gracefully
+- Use CSS selectors or XPath when appropriate
+- Cache parsed results when possible
+
+### Data Extraction
+- Use structs to represent scraped data
+- Implement validation for scraped data
+- Use JSON tags for serialization
+- Handle missing or malformed data gracefully
+- Use regular expressions sparingly and carefully
+
+## Project Structure Guidelines
+
+### Recommended Structure
+```
+go_scraping_project/
+├── cmd/
+│   └── scraper/
+│       └── main.go
+├── internal/
+│   ├── scraper/
+│   ├── parser/
+│   ├── storage/
+│   └── config/
+├── pkg/
+│   └── utils/
+├── configs/
+├── data/
+├── tests/
+├── go.mod
+├── go.sum
+├── README.md
+└── .gitignore
+```
+
+### Package Organization
+- `internal/scraper/`: Core scraping logic
+- `internal/parser/`: HTML/XML parsing utilities
+- `internal/storage/`: Data persistence layer
+- `internal/config/`: Configuration management
+- `pkg/utils/`: Reusable utilities
+
+## Testing Guidelines
+
+### Unit Tests
+- Write tests for all exported functions
+- Use table-driven tests for multiple scenarios
+- Mock external dependencies
+- Test error conditions
+- Use `testing.T` and `testing.B` appropriately
+
+### Integration Tests
+- Test HTTP client interactions
+- Use test servers for web scraping tests
+- Test data parsing with real HTML samples
+- Mock external APIs when possible
+
+## Configuration & Environment
+
+### Configuration Management
+- Use environment variables for sensitive data
+- Use configuration files for non-sensitive settings
+- Implement configuration validation
+- Use struct tags for configuration mapping
+- Support multiple environments (dev, staging, prod)
+
+### Environment Variables
+- Use `os.Getenv()` for environment variables
+- Provide default values where appropriate
+- Validate required environment variables at startup
+- Use `.env` files for local development
+
+## Performance & Optimization
+
+### Memory Management
+- Use object pools for frequently allocated objects
+- Implement proper cleanup in defer statements
+- Use sync.Pool for temporary objects
+- Profile memory usage regularly
+
+### Concurrency
+- Use goroutines for concurrent scraping
+- Implement proper synchronization with channels
+- Use worker pools for controlled concurrency
+- Handle context cancellation properly
+- Use `sync.WaitGroup` for goroutine coordination
+
+## Security Considerations
+
+### Input Validation
+- Validate all user inputs
+- Sanitize URLs before making requests
+- Use parameterized queries for databases
+- Implement proper authentication if needed
+
+### Network Security
+- Use HTTPS for all external requests
+- Validate SSL certificates
+- Implement proper timeout handling
+- Use secure headers when making requests
+
+## Documentation
+
+### Code Documentation
+- Write godoc comments for all exported functions
+- Include examples in documentation
+- Document complex algorithms
+- Keep README.md updated
+
+### API Documentation
+- Document all public APIs
+- Include usage examples
+- Document error conditions
+- Keep documentation in sync with code
+
+## Dependencies
+
+### Dependency Management
+- Use Go modules (go.mod)
+- Pin dependency versions
+- Regularly update dependencies
+- Use `go mod tidy` to clean up
+- Avoid unnecessary dependencies
+
+### Common Dependencies for Scraping
+- `golang.org/x/net/html`: HTML parsing
+- `github.com/PuerkitoBio/goquery`: jQuery-like HTML manipulation
+- `github.com/gocolly/colly`: Web scraping framework
+- `github.com/spf13/viper`: Configuration management
+- `github.com/sirupsen/logrus`: Structured logging
+
+## Logging & Monitoring
+
+### Logging Best Practices
+- Use structured logging
+- Include relevant context in log messages
+- Use appropriate log levels
+- Implement log rotation
+- Include request IDs for tracing
+
+### Monitoring
+- Add metrics for scraping success/failure rates
+- Monitor response times
+- Track data quality metrics
+- Implement health checks
+- Use proper error reporting
+
+## Code Review Guidelines
+
+### Review Checklist
+- [ ] Code follows Go conventions
+- [ ] Error handling is implemented
+- [ ] Tests are included
+- [ ] Documentation is updated
+- [ ] No hardcoded values
+- [ ] Proper logging is implemented
+- [ ] Security considerations are addressed
+- [ ] Performance impact is considered
+
+## Common Patterns
+
+### HTTP Client Pattern
+```go
+type Scraper struct {
+    client *http.Client
+    config *Config
+}
+
+func NewScraper(config *Config) *Scraper {
+    return &Scraper{
+        client: &http.Client{
+            Timeout: config.Timeout,
+        },
+        config: config,
+    }
+}
+```
+
+### Error Handling Pattern
+```go
+func (s *Scraper) Scrape(url string) (*Data, error) {
+    resp, err := s.client.Get(url)
+    if err != nil {
+        return nil, fmt.Errorf("failed to fetch %s: %w", url, err)
+    }
+    defer resp.Body.Close()
+    
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+    }
+    
+    // ... rest of implementation
+}
+```
+
+### Configuration Pattern
+```go
+type Config struct {
+    Timeout     time.Duration `json:"timeout"`
+    UserAgent   string        `json:"user_agent"`
+    MaxRetries  int           `json:"max_retries"`
+    RateLimit   time.Duration `json:"rate_limit"`
+}
+```
+
+Remember to:
+- Always handle errors explicitly
+- Write tests for your code
+- Document your APIs
+- Follow Go best practices
+- Be respectful when scraping websites
+- Implement proper rate limiting
+- Use context for cancellation
+- Keep your dependencies updated 
