@@ -13,6 +13,17 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
+const countURLs = `-- name: CountURLs :one
+SELECT COUNT(*) FROM urls
+`
+
+func (q *Queries) CountURLs(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countURLs)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createURL = `-- name: CreateURL :one
 INSERT INTO urls (
     url, frequency, status, max_retries, timeout, rate_limit, 

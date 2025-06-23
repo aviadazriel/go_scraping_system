@@ -4,6 +4,9 @@ SELECT * FROM urls WHERE id = $1;
 -- name: ListURLs :many
 SELECT * FROM urls ORDER BY created_at DESC LIMIT $1 OFFSET $2;
 
+-- name: CountURLs :one
+SELECT COUNT(*) FROM urls;
+
 -- name: CreateURL :one
 INSERT INTO urls (
     url, frequency, status, max_retries, timeout, rate_limit, 

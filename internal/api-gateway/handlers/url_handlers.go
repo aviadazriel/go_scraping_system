@@ -354,24 +354,57 @@ func (h *URLHandler) ListURLs(w http.ResponseWriter, r *http.Request) {
 
 	offset := (page - 1) * limit
 
-	// TODO: Get URLs from service
-	// urls, err := h.urlService.GetAllURLs(r.Context(), limit, offset)
-	// if err != nil {
-	//     h.logger.WithError(err).Error("Failed to get URLs")
-	//     http.Error(w, "Internal server error", http.StatusInternalServerError)
-	//     return
-	// }
+	// Get total count for pagination
+	total, err := h.db.CountURLs(r.Context())
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to count URLs")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
-	// For now, return mock data
+	// Get URLs from database using sqlc-generated query
+	urls, err := h.db.ListURLs(r.Context(), database.ListURLsParams{
+		Limit:  int32(limit),
+		Offset: int32(offset),
+	})
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get URLs from database")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Convert database URLs to response format
+	urlItems := make([]URLListItem, len(urls))
+	for i, url := range urls {
+		urlItem := URLListItem{
+			ID:        url.ID.String(),
+			URL:       url.Url,
+			Frequency: url.Frequency,
+			Status:    url.Status,
+			CreatedAt: url.CreatedAt.Format(time.RFC3339),
+		}
+
+		// Add optional fields if they have values
+		if url.LastScrapedAt.Valid {
+			lastScraped := url.LastScrapedAt.Time.Format(time.RFC3339)
+			urlItem.LastScrapedAt = &lastScraped
+		}
+
+		if url.NextScrapeAt.Valid {
+			nextScrape := url.NextScrapeAt.Time.Format(time.RFC3339)
+			urlItem.NextScrapeAt = &nextScrape
+		}
+
+		urlItems[i] = urlItem
+	}
+
+	// Build response
 	response := ListURLsResponse{
-		URLs:  []URLListItem{},
-		Total: 0,
+		URLs:  urlItems,
+		Total: total,
 		Page:  page,
 		Limit: limit,
 	}
-
-	// Use offset to avoid unused variable warning
-	_ = offset
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
