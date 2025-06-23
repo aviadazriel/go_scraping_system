@@ -37,25 +37,25 @@ type Metadata struct {
 
 // ScrapingTaskMessage represents a scraping task message
 type ScrapingTaskMessage struct {
-	TaskID    uuid.UUID   `json:"task_id"`
-	URLID     uuid.UUID   `json:"url_id"`
-	URL       string      `json:"url"`
-	UserAgent string      `json:"user_agent"`
-	Timeout   int         `json:"timeout"`
-	CreatedAt time.Time   `json:"created_at"`
-	Attempt   int         `json:"attempt"`
+	TaskID    uuid.UUID `json:"task_id"`
+	URLID     uuid.UUID `json:"url_id"`
+	URL       string    `json:"url"`
+	UserAgent string    `json:"user_agent"`
+	Timeout   int       `json:"timeout"`
+	CreatedAt time.Time `json:"created_at"`
+	Attempt   int       `json:"attempt"`
 }
 
 // ScrapedDataMessage represents a scraped data message
 type ScrapedDataMessage struct {
-	TaskID      uuid.UUID `json:"task_id"`
-	URLID       uuid.UUID `json:"url_id"`
+	TaskID        uuid.UUID `json:"task_id"`
+	URLID         uuid.UUID `json:"url_id"`
 	ScrapedDataID uuid.UUID `json:"scraped_data_id"`
-	FilePath    string    `json:"file_path"`
-	StatusCode  int       `json:"status_code"`
-	ScrapedAt   time.Time `json:"scraped_at"`
-	Success     bool      `json:"success"`
-	Error       string    `json:"error,omitempty"`
+	FilePath      string    `json:"file_path"`
+	StatusCode    int       `json:"status_code"`
+	ScrapedAt     time.Time `json:"scraped_at"`
+	Success       bool      `json:"success"`
+	Error         string    `json:"error,omitempty"`
 }
 
 // ParsedDataMessage represents a parsed data message
@@ -68,8 +68,8 @@ type ParsedDataMessage struct {
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
-// DeadLetterMessage represents a dead letter message
-type DeadLetterMessage struct {
+// KafkaDeadLetterMessage represents a dead letter message
+type KafkaDeadLetterMessage struct {
 	OriginalMessage KafkaMessage `json:"original_message"`
 	Error           string       `json:"error"`
 	FailedAt        time.Time    `json:"failed_at"`
@@ -80,12 +80,12 @@ type DeadLetterMessage struct {
 
 // RetryMessage represents a retry message
 type RetryMessage struct {
-	OriginalMessageID string    `json:"original_message_id"`
+	OriginalMessageID string      `json:"original_message_id"`
 	MessageType       MessageType `json:"message_type"`
 	Data              interface{} `json:"data"`
-	RetryCount        int        `json:"retry_count"`
-	MaxRetries        int        `json:"max_retries"`
-	RetryAt           time.Time  `json:"retry_at"`
+	RetryCount        int         `json:"retry_count"`
+	MaxRetries        int         `json:"max_retries"`
+	RetryAt           time.Time   `json:"retry_at"`
 }
 
 // Kafka Topics
@@ -154,7 +154,7 @@ func NewParsedDataMessage(data *ParsedData, correlationID string) *KafkaMessage 
 
 // NewDeadLetterMessage creates a new dead letter message
 func NewDeadLetterMessage(originalMessage *KafkaMessage, err error, maxRetries int) *KafkaMessage {
-	return NewKafkaMessage(MessageTypeDeadLetter, DeadLetterMessage{
+	return NewKafkaMessage(MessageTypeDeadLetter, KafkaDeadLetterMessage{
 		OriginalMessage: *originalMessage,
 		Error:           err.Error(),
 		FailedAt:        time.Now(),
@@ -173,4 +173,4 @@ func NewRetryMessage(originalMessageID string, messageType MessageType, data int
 		MaxRetries:        maxRetries,
 		RetryAt:           time.Now().Add(retryDelay),
 	}, "")
-} 
+}

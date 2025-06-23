@@ -5,8 +5,10 @@ go 1.21
 require (
 	github.com/Shopify/sarama v1.38.1
 	github.com/google/uuid v1.4.0
+	github.com/gorilla/mux v1.8.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.17.0
+	github.com/sqlc-dev/pqtype v0.3.0
 	gorm.io/driver/postgres v1.5.4
 	gorm.io/gorm v1.25.5
 )
