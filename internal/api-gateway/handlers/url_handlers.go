@@ -12,6 +12,7 @@ import (
 
 	"go_scraping_project/internal/database"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 	"github.com/sqlc-dev/pqtype"
@@ -399,25 +400,72 @@ func (h *URLHandler) GetURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Get URL from service
-	// url, err := h.urlService.GetURL(r.Context(), id)
-	// if err != nil {
-	//     if errors.Is(err, domain.ErrURLNotFound) {
-	//         http.Error(w, "URL not found", http.StatusNotFound)
-	//         return
-	//     }
-	//     h.logger.WithError(err).Error("Failed to get URL")
-	//     http.Error(w, "Internal server error", http.StatusInternalServerError)
-	//     return
-	// }
+	// Parse UUID from string
+	urlID, err := uuid.Parse(id)
+	if err != nil {
+		h.logger.WithError(err).WithField("url_id", id).Error("Invalid URL ID format")
+		http.Error(w, "Invalid URL ID format", http.StatusBadRequest)
+		return
+	}
 
-	// For now, return mock data
+	// Get URL from database using sqlc-generated query
+	url, err := h.db.GetURLByID(r.Context(), urlID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			h.logger.WithField("url_id", id).Warn("URL not found")
+			http.Error(w, "URL not found", http.StatusNotFound)
+			return
+		}
+		h.logger.WithError(err).WithField("url_id", id).Error("Failed to get URL from database")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse parser config if available
+	var parserConfig *ParserConfig
+	if url.ParserConfig.Valid {
+		var config ParserConfig
+		if err := json.Unmarshal(url.ParserConfig.RawMessage, &config); err != nil {
+			h.logger.WithError(err).WithField("url_id", id).Warn("Failed to parse parser config")
+			// Don't fail the request if parser config is invalid
+		} else {
+			parserConfig = &config
+		}
+	}
+
+	// Build response
 	response := map[string]interface{}{
-		"id":         id,
-		"url":        "https://example.com",
-		"frequency":  "1h",
-		"status":     "pending",
-		"created_at": "2024-01-01T00:00:00Z",
+		"id":          url.ID.String(),
+		"url":         url.Url,
+		"frequency":   url.Frequency,
+		"status":      url.Status,
+		"max_retries": url.MaxRetries,
+		"timeout":     url.Timeout,
+		"rate_limit":  url.RateLimit,
+		"retry_count": url.RetryCount,
+		"created_at":  url.CreatedAt.Format(time.RFC3339),
+		"updated_at":  url.UpdatedAt.Format(time.RFC3339),
+	}
+
+	// Add optional fields if they have values
+	if url.UserAgent.Valid {
+		response["user_agent"] = url.UserAgent.String
+	}
+
+	if url.LastScrapedAt.Valid {
+		response["last_scraped_at"] = url.LastScrapedAt.Time.Format(time.RFC3339)
+	}
+
+	if url.NextScrapeAt.Valid {
+		response["next_scrape_at"] = url.NextScrapeAt.Time.Format(time.RFC3339)
+	}
+
+	if parserConfig != nil {
+		response["parser_config"] = parserConfig
+	}
+
+	if url.DeletedAt.Valid {
+		response["deleted_at"] = url.DeletedAt.Time.Format(time.RFC3339)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
