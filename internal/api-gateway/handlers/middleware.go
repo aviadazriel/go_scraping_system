@@ -8,17 +8,47 @@ import (
 )
 
 // responseWriter wraps http.ResponseWriter to capture status code
+// This wrapper allows middleware to capture the HTTP status code
+// that was set by the handler for logging purposes.
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
 }
 
+// WriteHeader captures the status code before calling the original WriteHeader
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
 }
 
 // loggingMiddleware logs all HTTP requests with structured logging
+//
+// Purpose: Provides comprehensive request logging for all HTTP requests.
+// This middleware captures request details including method, path, status code,
+// response time, user agent, and remote IP address for monitoring and debugging.
+//
+// Features:
+//   - Structured logging with consistent format
+//   - Request duration measurement
+//   - Status code capture
+//   - User agent and IP address logging
+//
+// Example Usage:
+//
+//	router.Use(loggingMiddleware(logger))
+//
+// Log Output Example:
+//
+//	{
+//	  "level": "info",
+//	  "msg": "HTTP Request",
+//	  "method": "GET",
+//	  "path": "/api/v1/urls",
+//	  "status": 200,
+//	  "duration": "15.2ms",
+//	  "user_agent": "Mozilla/5.0...",
+//	  "remote_ip": "192.168.1.100"
+//	}
 func loggingMiddleware(log *logrus.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +74,26 @@ func loggingMiddleware(log *logrus.Logger) func(http.Handler) http.Handler {
 }
 
 // corsMiddleware handles Cross-Origin Resource Sharing
+//
+// Purpose: Enables cross-origin requests for web applications.
+// This middleware sets appropriate CORS headers to allow browsers
+// to make requests from different origins to the API Gateway.
+//
+// Features:
+//   - Allows all origins (*)
+//   - Supports common HTTP methods (GET, POST, PUT, DELETE, OPTIONS)
+//   - Handles preflight OPTIONS requests
+//   - Sets appropriate CORS headers
+//
+// Example Usage:
+//
+//	router.Use(corsMiddleware())
+//
+// Headers Set:
+//
+//	Access-Control-Allow-Origin: *
+//	Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+//	Access-Control-Allow-Headers: Content-Type, Authorization
 func corsMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +112,25 @@ func corsMiddleware() func(http.Handler) http.Handler {
 }
 
 // recoveryMiddleware recovers from panics and returns proper error responses
+//
+// Purpose: Prevents the application from crashing due to unhandled panics.
+// This middleware catches any panics that occur during request processing
+// and returns a proper HTTP 500 error response instead of crashing the server.
+//
+// Features:
+//   - Panic recovery and logging
+//   - Graceful error response
+//   - Request context logging for debugging
+//
+// Example Usage:
+//
+//	router.Use(recoveryMiddleware(logger))
+//
+// Error Response:
+//
+//	{
+//	  "error": "Internal server error"
+//	}
 func recoveryMiddleware(log *logrus.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +154,23 @@ func recoveryMiddleware(log *logrus.Logger) func(http.Handler) http.Handler {
 }
 
 // authMiddleware handles authentication (placeholder for future implementation)
+//
+// Purpose: Provides authentication and authorization for API endpoints.
+// This middleware will validate JWT tokens, API keys, or other authentication
+// mechanisms to ensure only authorized users can access protected endpoints.
+//
+// Current Status: Placeholder implementation that allows all requests
+// Future Implementation: JWT validation, API key checking, role-based access control
+//
+// Example Usage:
+//
+//	router.Use(authMiddleware(logger))
+//
+// Future Features:
+//   - JWT token validation
+//   - API key authentication
+//   - Role-based access control
+//   - Rate limiting per user
 func authMiddleware(log *logrus.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +182,23 @@ func authMiddleware(log *logrus.Logger) func(http.Handler) http.Handler {
 }
 
 // rateLimitMiddleware handles rate limiting (placeholder for future implementation)
+//
+// Purpose: Prevents API abuse by limiting the number of requests per client.
+// This middleware will implement rate limiting based on IP address, user ID,
+// or other identifiers to protect the API from excessive usage.
+//
+// Current Status: Placeholder implementation that allows all requests
+// Future Implementation: Token bucket algorithm, Redis-based rate limiting
+//
+// Example Usage:
+//
+//	router.Use(rateLimitMiddleware(logger))
+//
+// Future Features:
+//   - Token bucket rate limiting
+//   - Redis-based distributed rate limiting
+//   - Per-endpoint rate limits
+//   - Rate limit headers in responses
 func rateLimitMiddleware(log *logrus.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +210,23 @@ func rateLimitMiddleware(log *logrus.Logger) func(http.Handler) http.Handler {
 }
 
 // requestIDMiddleware adds a unique request ID to each request
+//
+// Purpose: Provides request tracing and correlation across distributed systems.
+// This middleware generates a unique request ID for each incoming request
+// and adds it to the response headers for client-side correlation.
+//
+// Current Status: Placeholder implementation
+// Future Implementation: UUID generation, header injection, context propagation
+//
+// Example Usage:
+//
+//	router.Use(requestIDMiddleware(logger))
+//
+// Future Features:
+//   - UUID v4 request ID generation
+//   - X-Request-ID header injection
+//   - Context propagation for internal services
+//   - Correlation with logging and metrics
 func requestIDMiddleware(log *logrus.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
