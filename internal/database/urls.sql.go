@@ -7,9 +7,65 @@ package database
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/sqlc-dev/pqtype"
 )
+
+const createURL = `-- name: CreateURL :one
+INSERT INTO urls (
+    url, frequency, status, max_retries, timeout, rate_limit, 
+    user_agent, parser_config, next_scrape_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
+) RETURNING id, url, frequency, last_scraped_at, next_scrape_at, status, retry_count, max_retries, parser_config, user_agent, timeout, rate_limit, created_at, updated_at, deleted_at
+`
+
+type CreateURLParams struct {
+	Url          string
+	Frequency    string
+	Status       string
+	MaxRetries   int32
+	Timeout      int32
+	RateLimit    int32
+	UserAgent    sql.NullString
+	ParserConfig pqtype.NullRawMessage
+	NextScrapeAt sql.NullTime
+}
+
+func (q *Queries) CreateURL(ctx context.Context, arg CreateURLParams) (Url, error) {
+	row := q.db.QueryRowContext(ctx, createURL,
+		arg.Url,
+		arg.Frequency,
+		arg.Status,
+		arg.MaxRetries,
+		arg.Timeout,
+		arg.RateLimit,
+		arg.UserAgent,
+		arg.ParserConfig,
+		arg.NextScrapeAt,
+	)
+	var i Url
+	err := row.Scan(
+		&i.ID,
+		&i.Url,
+		&i.Frequency,
+		&i.LastScrapedAt,
+		&i.NextScrapeAt,
+		&i.Status,
+		&i.RetryCount,
+		&i.MaxRetries,
+		&i.ParserConfig,
+		&i.UserAgent,
+		&i.Timeout,
+		&i.RateLimit,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
 
 const getURLByID = `-- name: GetURLByID :one
 SELECT id, url, frequency, last_scraped_at, next_scrape_at, status, retry_count, max_retries, parser_config, user_agent, timeout, rate_limit, created_at, updated_at, deleted_at FROM urls WHERE id = $1

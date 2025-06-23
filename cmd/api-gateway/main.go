@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,8 +12,10 @@ import (
 
 	"go_scraping_project/internal/api-gateway/handlers"
 	"go_scraping_project/internal/config"
+	"go_scraping_project/internal/database"
 	"go_scraping_project/pkg/observability"
 
+	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,8 +41,25 @@ func main() {
 		"service":    "api-gateway",
 	}).Info("Starting API Gateway Service")
 
-	// Create router with all handlers
-	router := handlers.NewRouter(log)
+	// Initialize database connection
+	db, err := sql.Open("postgres", cfg.GetDatabaseURL())
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	// Test database connection
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
+	}
+
+	// Create sqlc queries instance
+	queries := database.New(db)
+
+	log.Info("Database connection established successfully")
+
+	// Create router with database queries
+	router := handlers.NewRouter(log, queries)
 	handler := router.SetupRoutes()
 
 	// Initialize HTTP server

@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 
+	"go_scraping_project/internal/database"
+
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
@@ -13,6 +15,7 @@ import (
 type Router struct {
 	router *mux.Router
 	logger *logrus.Logger
+	db     *database.Queries
 
 	// Handlers
 	urlHandler     *URLHandler     // Handles URL management endpoints
@@ -21,20 +24,22 @@ type Router struct {
 	adminHandler   *AdminHandler   // Handles admin and system management endpoints
 }
 
-// NewRouter creates a new router with all handlers
-// This function initializes the router and all handler instances,
-// setting up the complete routing structure for the API Gateway.
+// NewRouter creates a new router with all handlers and database queries
+// This function initializes the router and all handler instances with their
+// required database queries, setting up the complete routing structure
+// for the API Gateway.
 //
 // Parameters:
 //   - logger: Structured logger for request logging and error handling
+//   - db: sqlc-generated database queries for data persistence
 //
 // Returns:
 //   - *Router: Configured router instance ready for route setup
-func NewRouter(logger *logrus.Logger) *Router {
+func NewRouter(logger *logrus.Logger, db *database.Queries) *Router {
 	router := mux.NewRouter()
 
-	// Initialize handlers
-	urlHandler := NewURLHandler(logger)
+	// Initialize handlers with database queries
+	urlHandler := NewURLHandler(logger, db)
 	dataHandler := NewDataHandler(logger)
 	metricsHandler := NewMetricsHandler(logger)
 	adminHandler := NewAdminHandler(logger)
@@ -42,6 +47,7 @@ func NewRouter(logger *logrus.Logger) *Router {
 	return &Router{
 		router:         router,
 		logger:         logger,
+		db:             db,
 		urlHandler:     urlHandler,
 		dataHandler:    dataHandler,
 		metricsHandler: metricsHandler,
