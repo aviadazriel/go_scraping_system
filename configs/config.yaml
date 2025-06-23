@@ -7,9 +7,9 @@ server:
 database:
   host: localhost
   port: 5432
-  user: scraper
-  password: scraper_password
-  database: scraping_db
+  user: aazriel
+  password: abc123
+  database: goProject
   ssl_mode: disable
   max_open_conns: 25
   max_idle_conns: 5
