@@ -51,14 +51,8 @@ func main() {
 		}
 	}()
 
-	// Get underlying *sql.DB for sqlc
-	sqlDB, err := db.DB.DB()
-	if err != nil {
-		log.Fatalf("Failed to get underlying sql.DB: %v", err)
-	}
-
-	// Initialize database queries
-	queries := database.New(sqlDB)
+	// Initialize database queries using sqlc
+	queries := database.New(db.GetDB())
 
 	// Initialize URL repository
 	urlRepo := repositories.NewURLRepository(queries, log)
