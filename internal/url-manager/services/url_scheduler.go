@@ -109,43 +109,43 @@ func (s *URLSchedulerService) processScheduledURLs(ctx context.Context) error {
 
 // processURL processes a single URL for scraping
 func (s *URLSchedulerService) processURL(ctx context.Context, url database.Url) error {
-	// Check if URL is actually due (double-check to avoid race conditions)
 	if !url.NextScrapeAt.Valid || url.NextScrapeAt.Time.After(time.Now().UTC()) {
 		return nil // Not actually due yet
 	}
 
 	s.logger.Printf("Processing URL: %s (ID: %s)", url.Url, url.ID)
 
-	// Create scraping task message
-	taskID := uuid.New()
-	message := domain.ScrapingTaskMessage{
-		ID:        taskID,
+	// Create scraping task struct
+	task := &domain.ScrapingTask{
+		ID:        uuid.New(),
 		URLID:     url.ID,
 		URL:       url.Url,
-		UserAgent: url.UserAgent,
-		Timeout:   url.Timeout,
+		Status:    domain.URLStatusPending,
+		Attempt:   1,
 		CreatedAt: time.Now().UTC(),
 	}
 
+	// Create Kafka message using helper
+	correlationID := uuid.New().String()
+	msg := domain.NewScrapingTaskMessage(task, correlationID)
+
 	// Send message to Kafka
-	if err := s.producer.SendMessage(ctx, "scraping-tasks", taskID.String(), message); err != nil {
+	if err := s.producer.SendMessage(ctx, domain.TopicScrapingTasks, msg); err != nil {
 		return fmt.Errorf("failed to send scraping task to Kafka: %w", err)
 	}
 
-	s.logger.Printf("Sent scraping task to Kafka: %s", taskID)
+	s.logger.Printf("Sent scraping task to Kafka: %s", task.ID)
 
 	// Update URL status and last scraped time
 	if err := s.urlRepo.UpdateLastScrapedTime(ctx, url.ID, time.Now().UTC()); err != nil {
 		return fmt.Errorf("failed to update last scraped time: %w", err)
 	}
 
-	// Calculate next scrape time
 	nextScrape, err := models.CalculateNextScrapeTime(url.Frequency, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("failed to calculate next scrape time: %w", err)
 	}
 
-	// Update next scrape time
 	if err := s.urlRepo.UpdateNextScrapeTime(ctx, url.ID, nextScrape); err != nil {
 		return fmt.Errorf("failed to update next scrape time: %w", err)
 	}

@@ -31,8 +31,14 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Check if Docker is installed
+if ! command -v docker &> /dev/null; then
+    print_error "Docker is not installed or not in PATH."
+    exit 1
+fi
+
 # Check if Docker is running
-if ! docker version > /dev/null 2>&1; then
+if ! docker info > /dev/null 2>&1; then
     print_error "Docker is not running. Please start Docker and try again."
     exit 1
 fi
