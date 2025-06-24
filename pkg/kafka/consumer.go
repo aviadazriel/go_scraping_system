@@ -11,6 +11,7 @@ import (
 	"go_scraping_project/internal/domain"
 
 	"github.com/Shopify/sarama"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -41,8 +42,8 @@ func NewConsumer(cfg *config.Config, log *logrus.Logger) (*Consumer, error) {
 	config.Consumer.Offsets.AutoCommit.Enable = cfg.Kafka.EnableAutoCommit
 	config.Consumer.Offsets.AutoCommit.Interval = cfg.Kafka.AutoCommitInterval
 	config.Consumer.Offsets.CommitInterval = cfg.Kafka.AutoCommitInterval
-	config.Consumer.Session.Timeout = cfg.Kafka.SessionTimeout
-	config.Consumer.Heartbeat.Interval = cfg.Kafka.HeartbeatInterval
+	config.Consumer.Group.Session.Timeout = cfg.Kafka.SessionTimeout
+	config.Consumer.Group.Heartbeat.Interval = cfg.Kafka.HeartbeatInterval
 	config.Consumer.MaxProcessingTime = cfg.Kafka.MaxPollInterval
 	config.Consumer.Fetch.Max = int32(cfg.Kafka.MaxPollRecords)
 	config.Consumer.Return.Errors = true
@@ -167,7 +168,6 @@ func (cg *ConsumerGroup) processMessage(ctx context.Context, message *domain.Kaf
 // processWithRetry processes a message with retry logic
 func (cg *ConsumerGroup) processWithRetry(ctx context.Context, message *domain.KafkaMessage, handler MessageHandler, saramaMessage *sarama.ConsumerMessage) error {
 	maxRetries := cg.consumer.config.Kafka.RetryMaxAttempts
-	retryCount := message.Metadata.RetryCount
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		err := handler(ctx, message)
@@ -176,11 +176,11 @@ func (cg *ConsumerGroup) processWithRetry(ctx context.Context, message *domain.K
 		}
 
 		cg.consumer.logger.WithFields(logrus.Fields{
-			"message_id":  message.ID,
+			"message_id":   message.ID,
 			"message_type": message.Type,
-			"attempt":     attempt + 1,
-			"max_retries": maxRetries,
-			"error":       err.Error(),
+			"attempt":      attempt + 1,
+			"max_retries":  maxRetries,
+			"error":        err.Error(),
 		}).Warn("Message processing failed, retrying...")
 
 		// If this is the last attempt, send to dead letter queue
@@ -203,26 +203,35 @@ func (cg *ConsumerGroup) processWithRetry(ctx context.Context, message *domain.K
 
 // sendToDeadLetter sends a failed message to the dead letter queue
 func (cg *ConsumerGroup) sendToDeadLetter(message *domain.KafkaMessage, err error, saramaMessage *sarama.ConsumerMessage) error {
-	deadLetterMessage := &domain.DeadLetterMessage{
-		ID:           message.ID,
-		Topic:        saramaMessage.Topic,
-		Partition:    saramaMessage.Partition,
-		Offset:       saramaMessage.Offset,
-		Key:          saramaMessage.Key,
-		Value:        saramaMessage.Value,
-		Error:        err.Error(),
-		RetryCount:   message.Metadata.RetryCount,
-		MaxRetries:   cg.consumer.config.Kafka.RetryMaxAttempts,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+	// Parse message ID as UUID
+	messageID, parseErr := uuid.Parse(message.ID)
+	if parseErr != nil {
+		cg.consumer.logger.WithError(parseErr).Error("Failed to parse message ID as UUID")
+		messageID = uuid.New() // Fallback to new UUID
+	}
+
+	deadLetterMsg := &domain.DeadLetterMessage{
+		ID:         messageID,
+		Topic:      saramaMessage.Topic,
+		Partition:  saramaMessage.Partition,
+		Offset:     saramaMessage.Offset,
+		Key:        saramaMessage.Key,
+		Value:      saramaMessage.Value,
+		Error:      err.Error(),
+		RetryCount: message.Metadata.RetryCount,
+		MaxRetries: cg.consumer.config.Kafka.RetryMaxAttempts,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 
 	// Here you would typically save the dead letter message to the database
 	// For now, we'll just log it
 	cg.consumer.logger.WithFields(logrus.Fields{
-		"message_id": message.ID,
-		"topic":      saramaMessage.Topic,
-		"error":      err.Error(),
+		"message_id":  deadLetterMsg.ID,
+		"topic":       deadLetterMsg.Topic,
+		"error":       deadLetterMsg.Error,
+		"retry_count": deadLetterMsg.RetryCount,
+		"max_retries": deadLetterMsg.MaxRetries,
 	}).Error("Message sent to dead letter queue")
 
 	return err
@@ -243,4 +252,4 @@ func (c *Consumer) HealthCheck(ctx context.Context) error {
 	default:
 		return nil
 	}
-} 
+}

@@ -7,7 +7,8 @@ A distributed web scraping system built with Go microservices, Kafka, and Postgr
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   API Gateway   │    │  URL Manager    │    │   Scraper       │
-│                 │    │   Service       │    │   Service       │
+│   (Web Service) │    │  (Background    │    │   Service       │
+│                 │    │   Service)      │    │                 │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
          │                       │                       │
@@ -26,16 +27,25 @@ A distributed web scraping system built with Go microservices, Kafka, and Postgr
 
 ## Services
 
-### 1. URL Manager Service
-- **Purpose**: Manages URLs to scrape, scheduling, and orchestration
+### 1. URL Manager Service (Background)
+- **Purpose**: **Background service** that schedules and distributes web scraping tasks
 - **Responsibilities**:
-  - CRUD operations for URLs
-  - Schedule management (frequency, last scrape time)
-  - Status tracking (pending, in_progress, completed, failed)
-  - Kafka message production for scraping tasks
-  - Dead letter queue management
+  - **Periodically scans database** for URLs due for scraping (every 30 seconds)
+  - **Creates scraping tasks** and sends them to Kafka topics
+  - **Updates URL scheduling** (next scrape time, status, retry counts)
+  - **Task distribution** to scraper services via Kafka
+  - **No HTTP endpoints** - pure background processing
 
-### 2. Scraper Service
+### 2. API Gateway Service (Web)
+- **Purpose**: Single entry point for external clients
+- **Responsibilities**:
+  - **CRUD operations** for URLs (create, read, update, delete)
+  - **Manual trigger endpoints** for immediate scraping
+  - **Data retrieval** and export functionality
+  - **Authentication and authorization**
+  - **Rate limiting and request transformation**
+
+### 3. Scraper Service
 - **Purpose**: Performs HTTP requests and saves HTML content
 - **Responsibilities**:
   - Consume scraping tasks from Kafka
@@ -44,7 +54,7 @@ A distributed web scraping system built with Go microservices, Kafka, and Postgr
   - Status updates to database
   - Error handling and dead letter queue
 
-### 3. Parser Service
+### 4. Parser Service
 - **Purpose**: Extracts structured data from HTML files
 - **Responsibilities**:
   - HTML parsing and data extraction
@@ -52,21 +62,13 @@ A distributed web scraping system built with Go microservices, Kafka, and Postgr
   - Structured data storage
   - Error handling for malformed HTML
 
-### 4. Data Storage Service
+### 5. Data Storage Service
 - **Purpose**: Manages parsed data storage and retrieval
 - **Responsibilities**:
   - Store parsed data in database
   - Data querying and filtering
   - Data export functionality
   - Data cleanup and archiving
-
-### 5. API Gateway
-- **Purpose**: Single entry point for external clients
-- **Responsibilities**:
-  - Route requests to appropriate services
-  - Authentication and authorization
-  - Rate limiting
-  - Request/response transformation
 
 ## Technology Stack
 

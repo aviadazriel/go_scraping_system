@@ -2,20 +2,55 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"go_scraping_project/internal/config"
-	"go_scraping_project/pkg/database"
+	"go_scraping_project/internal/database"
+	"go_scraping_project/internal/domain"
+	"go_scraping_project/internal/url-manager/repositories"
+	"go_scraping_project/internal/url-manager/services"
+	pkgdb "go_scraping_project/pkg/database"
 	"go_scraping_project/pkg/kafka"
 	"go_scraping_project/pkg/observability"
 
 	"github.com/sirupsen/logrus"
 )
+
+// KafkaProducerWrapper wraps the kafka.Producer to implement domain.KafkaProducer
+type KafkaProducerWrapper struct {
+	producer *kafka.Producer
+}
+
+func (w *KafkaProducerWrapper) SendMessage(ctx context.Context, topic string, message *domain.KafkaMessage) error {
+	return w.producer.SendMessage(ctx, topic, message)
+}
+
+func (w *KafkaProducerWrapper) SendScrapingTask(ctx context.Context, task *domain.ScrapingTask) error {
+	return w.producer.SendScrapingTask(ctx, task)
+}
+
+func (w *KafkaProducerWrapper) SendScrapedData(ctx context.Context, data *domain.ScrapedData, success bool, err string) error {
+	return w.producer.SendScrapedData(ctx, data, success, err)
+}
+
+func (w *KafkaProducerWrapper) SendParsedData(ctx context.Context, data *domain.ParsedData) error {
+	return w.producer.SendParsedData(ctx, data)
+}
+
+func (w *KafkaProducerWrapper) SendDeadLetter(ctx context.Context, originalMessage *domain.KafkaMessage, err error, maxRetries int) error {
+	return w.producer.SendDeadLetterMessage(ctx, originalMessage, err)
+}
+
+func (w *KafkaProducerWrapper) SendRetryMessage(ctx context.Context, originalMessageID string, messageType domain.MessageType, data interface{}, retryCount, maxRetries int, retryDelay time.Duration) error {
+	return w.producer.SendRetryMessage(ctx, originalMessageID, messageType, data, retryCount)
+}
+
+func (w *KafkaProducerWrapper) Close() error {
+	return w.producer.Close()
+}
 
 var (
 	Version   = "dev"
@@ -37,10 +72,10 @@ func main() {
 		"version":    Version,
 		"build_time": BuildTime,
 		"service":    "url-manager",
-	}).Info("Starting URL Manager Service")
+	}).Info("Starting URL Manager Background Service")
 
 	// Initialize database
-	db, err := database.NewPostgresDB(cfg, log)
+	db, err := pkgdb.NewPostgresDB(cfg, log)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -49,6 +84,18 @@ func main() {
 			log.Errorf("Failed to close database connection: %v", err)
 		}
 	}()
+
+	// Get underlying *sql.DB for sqlc
+	sqlDB, err := db.DB.DB()
+	if err != nil {
+		log.Fatalf("Failed to get underlying sql.DB: %v", err)
+	}
+
+	// Initialize database queries
+	queries := database.New(sqlDB)
+
+	// Initialize URL repository
+	urlRepo := repositories.NewURLRepository(queries, log)
 
 	// Initialize Kafka producer
 	producer, err := kafka.NewProducer(cfg, log)
@@ -61,84 +108,44 @@ func main() {
 		}
 	}()
 
-	// Initialize Kafka consumer
-	consumer, err := kafka.NewConsumer(cfg, log)
-	if err != nil {
-		log.Fatalf("Failed to create Kafka consumer: %v", err)
+	// Wrap Kafka producer to match domain interface
+	kafkaProducer := &KafkaProducerWrapper{producer: producer}
+
+	// Initialize URL scheduler service
+	schedulerService := services.NewURLSchedulerService(urlRepo, kafkaProducer, log)
+
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start the scheduler service
+	if err := schedulerService.Start(ctx); err != nil {
+		log.Fatalf("Failed to start scheduler service: %v", err)
 	}
 	defer func() {
-		if err := consumer.Close(); err != nil {
-			log.Errorf("Failed to close Kafka consumer: %v", err)
+		if err := schedulerService.Stop(); err != nil {
+			log.Errorf("Failed to stop scheduler service: %v", err)
 		}
 	}()
 
-	// Initialize HTTP server
-	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
-		IdleTimeout:  cfg.Server.IdleTimeout,
-		Handler:      createHandler(cfg, db, producer, log),
-	}
+	log.Info("URL Manager Background Service is running. Press Ctrl+C to stop.")
 
-	// Start HTTP server in a goroutine
-	go func() {
-		log.WithField("port", cfg.Server.Port).Info("Starting HTTP server")
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start HTTP server: %v", err)
-		}
-	}()
-
-	// Start Kafka consumer in a goroutine
-	go func() {
-		topics := []string{"retry", "dead-letter"}
-		log.WithField("topics", topics).Info("Starting Kafka consumer")
-		if err := consumer.Consume(topics); err != nil {
-			log.Errorf("Kafka consumer error: %v", err)
-		}
-	}()
-
-	// Wait for interrupt signal to gracefully shutdown the server
+	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Info("Shutting down URL Manager Service...")
+	log.Info("Shutting down URL Manager Background Service...")
 
-	// Create a deadline for server shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Give the scheduler time to finish current operations
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
-	// Attempt graceful shutdown
-	if err := server.Shutdown(ctx); err != nil {
-		log.Errorf("Server forced to shutdown: %v", err)
-	}
+	// The scheduler will stop when the context is cancelled
+	cancel()
 
-	log.Info("URL Manager Service exited")
-}
+	// Wait for shutdown timeout or completion
+	<-shutdownCtx.Done()
 
-// createHandler creates the HTTP handler for the URL Manager service
-func createHandler(cfg *config.Config, db *database.PostgresDB, producer *kafka.Producer, log *logrus.Logger) http.Handler {
-	// TODO: Initialize repositories and services
-	// TODO: Create HTTP handlers
-	// TODO: Add middleware (logging, metrics, tracing, etc.)
-
-	mux := http.NewServeMux()
-
-	// Health check endpoint
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"healthy","service":"url-manager"}`))
-	})
-
-	// TODO: Add other endpoints
-	// - POST /api/v1/urls - Create URL
-	// - GET /api/v1/urls - List URLs
-	// - GET /api/v1/urls/{id} - Get URL
-	// - PUT /api/v1/urls/{id} - Update URL
-	// - DELETE /api/v1/urls/{id} - Delete URL
-	// - POST /api/v1/urls/{id}/scrape - Trigger immediate scrape
-
-	return mux
+	log.Info("URL Manager Background Service exited")
 }

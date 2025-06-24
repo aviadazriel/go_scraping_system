@@ -5,6 +5,17 @@ import (
 	"time"
 )
 
+// KafkaProducer defines the interface for Kafka message production
+type KafkaProducer interface {
+	SendMessage(ctx context.Context, topic string, message *KafkaMessage) error
+	SendScrapingTask(ctx context.Context, task *ScrapingTask) error
+	SendScrapedData(ctx context.Context, data *ScrapedData, success bool, err string) error
+	SendParsedData(ctx context.Context, data *ParsedData) error
+	SendDeadLetter(ctx context.Context, originalMessage *KafkaMessage, err error, maxRetries int) error
+	SendRetryMessage(ctx context.Context, originalMessageID string, messageType MessageType, data interface{}, retryCount, maxRetries int, retryDelay time.Duration) error
+	Close() error
+}
+
 // URLRepository defines the interface for URL data access
 type URLRepository interface {
 	Create(ctx context.Context, url *URL) error
@@ -80,4 +91,4 @@ type MetricsRepository interface {
 	GetErrorCount(ctx context.Context, urlID string, days int) (int64, error)
 	DeleteOldMetrics(ctx context.Context, days int) error
 	Count(ctx context.Context) (int64, error)
-} 
+}
