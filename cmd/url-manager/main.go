@@ -9,7 +9,6 @@ import (
 
 	"go_scraping_project/internal/config"
 	"go_scraping_project/internal/database"
-	"go_scraping_project/internal/domain"
 	"go_scraping_project/internal/url-manager/repositories"
 	"go_scraping_project/internal/url-manager/services"
 	pkgdb "go_scraping_project/pkg/database"
@@ -18,39 +17,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 )
-
-// KafkaProducerWrapper wraps the kafka.Producer to implement domain.KafkaProducer
-type KafkaProducerWrapper struct {
-	producer *kafka.Producer
-}
-
-func (w *KafkaProducerWrapper) SendMessage(ctx context.Context, topic string, message *domain.KafkaMessage) error {
-	return w.producer.SendMessage(ctx, topic, message)
-}
-
-func (w *KafkaProducerWrapper) SendScrapingTask(ctx context.Context, task *domain.ScrapingTask) error {
-	return w.producer.SendScrapingTask(ctx, task)
-}
-
-func (w *KafkaProducerWrapper) SendScrapedData(ctx context.Context, data *domain.ScrapedData, success bool, err string) error {
-	return w.producer.SendScrapedData(ctx, data, success, err)
-}
-
-func (w *KafkaProducerWrapper) SendParsedData(ctx context.Context, data *domain.ParsedData) error {
-	return w.producer.SendParsedData(ctx, data)
-}
-
-func (w *KafkaProducerWrapper) SendDeadLetter(ctx context.Context, originalMessage *domain.KafkaMessage, err error, maxRetries int) error {
-	return w.producer.SendDeadLetterMessage(ctx, originalMessage, err)
-}
-
-func (w *KafkaProducerWrapper) SendRetryMessage(ctx context.Context, originalMessageID string, messageType domain.MessageType, data interface{}, retryCount, maxRetries int, retryDelay time.Duration) error {
-	return w.producer.SendRetryMessage(ctx, originalMessageID, messageType, data, retryCount)
-}
-
-func (w *KafkaProducerWrapper) Close() error {
-	return w.producer.Close()
-}
 
 var (
 	Version   = "dev"
@@ -109,7 +75,7 @@ func main() {
 	}()
 
 	// Wrap Kafka producer to match domain interface
-	kafkaProducer := &KafkaProducerWrapper{producer: producer}
+	kafkaProducer := kafka.NewKafkaProducerWrapper(producer)
 
 	// Initialize URL scheduler service
 	schedulerService := services.NewURLSchedulerService(urlRepo, kafkaProducer, log)
