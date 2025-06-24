@@ -1,0 +1,184 @@
+version: '3.8'
+
+services:
+  # Kafka (Zookeeper + Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: scraping_zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scraping_network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: scraping_kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: 'true'
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - scraping_network
+
+  # Kafka UI (Optional - for monitoring)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: scraping_kafka_ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    ports:
+      - "8080:8080"
+    networks:
+      - scraping_network
+
+  # URL Manager Service
+  url-manager:
+    build:
+      context: .
+      dockerfile: cmd/url-manager/Dockerfile
+    container_name: scraping_url_manager
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      # Database configuration (using your local PostgreSQL)
+      DB_HOST: host.docker.internal
+      DB_PORT: 5432
+      DB_USER: scraper
+      DB_PASSWORD: scraper_password
+      DB_NAME: scraper
+      DB_SSL_MODE: disable
+      
+      # Kafka configuration
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_GROUP_ID: url-manager-group
+      KAFKA_RETRY_MAX_ATTEMPTS: 3
+      KAFKA_RETRY_BACKOFF: 1s
+      
+      # Server configuration
+      SERVER_PORT: 8080
+      SERVER_READ_TIMEOUT: 30s
+      SERVER_WRITE_TIMEOUT: 30s
+      SERVER_IDLE_TIMEOUT: 60s
+      
+      # Logging
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      
+      # Timezone
+      TZ: UTC
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./configs:/app/configs:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - scraping_network
+
+  # API Gateway Service
+  api-gateway:
+    build:
+      context: .
+      dockerfile: cmd/api-gateway/Dockerfile
+    container_name: scraping_api_gateway
+    restart: unless-stopped
+    depends_on:
+      url-manager:
+        condition: service_healthy
+    environment:
+      # Database configuration (using your local PostgreSQL)
+      DB_HOST: host.docker.internal
+      DB_PORT: 5432
+      DB_USER: scraper
+      DB_PASSWORD: scraper_password
+      DB_NAME: scraper
+      DB_SSL_MODE: disable
+      
+      # URL Manager service
+      URL_MANAGER_URL: http://url-manager:8080
+      
+      # Server configuration
+      SERVER_PORT: 8080
+      SERVER_READ_TIMEOUT: 30s
+      SERVER_WRITE_TIMEOUT: 30s
+      SERVER_IDLE_TIMEOUT: 60s
+      
+      # Logging
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      
+      # Timezone
+      TZ: UTC
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./configs:/app/configs:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - scraping_network
+
+volumes:
+  zookeeper_data:
+    driver: local
+  zookeeper_logs:
+    driver: local
+  kafka_data:
+    driver: local
+
+networks:
+  scraping_network:
+    driver: bridge 
