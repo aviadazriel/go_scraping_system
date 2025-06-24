@@ -13,12 +13,12 @@ import (
 
 // URLRepositoryImpl implements the URLRepository interface using sqlc-generated queries
 type URLRepositoryImpl struct {
-	db     *database.Queries
+	db     database.Querier
 	logger *logrus.Logger
 }
 
 // NewURLRepository creates a new URL repository instance
-func NewURLRepository(db *database.Queries, logger *logrus.Logger) URLRepository {
+func NewURLRepository(db database.Querier, logger *logrus.Logger) URLRepository {
 	return &URLRepositoryImpl{
 		db:     db,
 		logger: logger,

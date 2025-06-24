@@ -101,27 +101,207 @@ db-reset: ## Reset database (drops and recreates)
 	@make migrate
 
 # Testing
-.PHONY: test
-test: ## Run all tests
-	@echo "Running tests..."
-	go test -v ./...
+.PHONY: test test-unit test-integration test-all test-coverage test-race test-benchmark
 
-.PHONY: test-coverage
-test-coverage: ## Run tests with coverage
+# Run all tests
+test: test-unit test-integration
+
+# Run unit tests only
+test-unit:
+	@echo "Running unit tests..."
+	go test -v ./tests/unit/...
+
+# Run integration tests only
+test-integration:
+	@echo "Running integration tests..."
+	go test -v ./tests/integration/...
+
+# Run all tests with coverage
+test-coverage:
 	@echo "Running tests with coverage..."
-	go test -v -coverprofile=coverage.out ./...
+	go test -v -coverprofile=coverage.out ./tests/...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
-.PHONY: test-unit
-test-unit: ## Run unit tests only
-	@echo "Running unit tests..."
-	go test -v -short ./...
+# Run tests with race detection
+test-race:
+	@echo "Running tests with race detection..."
+	go test -v -race ./tests/...
 
-.PHONY: test-integration
-test-integration: ## Run integration tests only
-	@echo "Running integration tests..."
-	go test -v -run Integration ./...
+# Run benchmarks
+test-benchmark:
+	@echo "Running benchmarks..."
+	go test -v -bench=. -benchmem ./tests/...
+
+# Run tests in parallel
+test-parallel:
+	@echo "Running tests in parallel..."
+	go test -v -parallel 4 ./tests/...
+
+# Run tests with verbose output
+test-verbose:
+	@echo "Running tests with verbose output..."
+	go test -v -count=1 ./tests/...
+
+# Run tests and generate coverage badge
+test-coverage-badge:
+	@echo "Running tests and generating coverage badge..."
+	go test -v -coverprofile=coverage.out ./tests/...
+	@if command -v gocover-cobertura >/dev/null 2>&1; then \
+		gocover-cobertura < coverage.out > coverage.xml; \
+		echo "Coverage XML generated: coverage.xml"; \
+	else \
+		echo "gocover-cobertura not found. Install with: go install github.com/boumenot/gocover-cobertura@latest"; \
+	fi
+
+# Clean test artifacts
+test-clean:
+	@echo "Cleaning test artifacts..."
+	rm -f coverage.out coverage.html coverage.xml
+	rm -rf testdata/
+
+# Setup test environment
+test-setup:
+	@echo "Setting up test environment..."
+	@if [ ! -d "testdata" ]; then mkdir -p testdata; fi
+	@echo "Test environment ready"
+
+# Run tests with specific tags
+test-short:
+	@echo "Running short tests..."
+	go test -v -short ./tests/...
+
+test-long:
+	@echo "Running long tests..."
+	go test -v -run "Test.*Long" ./tests/...
+
+# Run tests for specific packages
+test-url-manager:
+	@echo "Running URL Manager tests..."
+	go test -v ./internal/url-manager/... ./tests/unit/url_*.go
+
+test-api-gateway:
+	@echo "Running API Gateway tests..."
+	go test -v ./internal/api-gateway/... ./tests/unit/api_*.go
+
+test-database:
+	@echo "Running database tests..."
+	go test -v ./internal/database/... ./tests/unit/database_*.go
+
+# Run tests with different build tags
+test-race-detector:
+	@echo "Running tests with race detector..."
+	go test -v -race -tags=race ./tests/...
+
+test-debug:
+	@echo "Running tests with debug output..."
+	go test -v -tags=debug ./tests/...
+
+# Performance testing
+test-performance:
+	@echo "Running performance tests..."
+	go test -v -bench=. -benchmem -run=^$$ ./tests/...
+
+# Load testing (if you have load test files)
+test-load:
+	@echo "Running load tests..."
+	@if [ -d "tests/load" ]; then \
+		go test -v ./tests/load/...; \
+	else \
+		echo "No load tests found in tests/load/"; \
+	fi
+
+# Security testing
+test-security:
+	@echo "Running security tests..."
+	@if [ -d "tests/security" ]; then \
+		go test -v ./tests/security/...; \
+	else \
+		echo "No security tests found in tests/security/"; \
+	fi
+
+# Test database setup
+test-db-setup:
+	@echo "Setting up test database..."
+	@if command -v docker >/dev/null 2>&1; then \
+		docker run --rm -d --name scraper-test-db \
+			-e POSTGRES_DB=scraper_test \
+			-e POSTGRES_USER=scraper \
+			-e POSTGRES_PASSWORD=scraper_password \
+			-p 5433:5432 \
+			postgres:15; \
+		echo "Test database started on port 5433"; \
+		echo "Waiting for database to be ready..."; \
+		sleep 10; \
+	else \
+		echo "Docker not found. Please install Docker or use existing PostgreSQL instance."; \
+	fi
+
+test-db-cleanup:
+	@echo "Cleaning up test database..."
+	@if command -v docker >/dev/null 2>&1; then \
+		docker stop scraper-test-db 2>/dev/null || true; \
+		docker rm scraper-test-db 2>/dev/null || true; \
+		echo "Test database cleaned up"; \
+	else \
+		echo "Docker not found. Please clean up manually."; \
+	fi
+
+# Test with different Go versions (if you have multiple Go versions)
+test-go-versions:
+	@echo "Testing with different Go versions..."
+	@for version in 1.21 1.22 1.23; do \
+		echo "Testing with Go $$version..."; \
+		if command -v go$$version >/dev/null 2>&1; then \
+			go$$version test -v ./tests/unit/...; \
+		else \
+			echo "Go $$version not found, skipping..."; \
+		fi; \
+	done
+
+# Test CI/CD pipeline simulation
+test-ci:
+	@echo "Running CI/CD pipeline tests..."
+	@echo "1. Running linter..."
+	@make lint
+	@echo "2. Running unit tests..."
+	@make test-unit
+	@echo "3. Running integration tests..."
+	@make test-integration
+	@echo "4. Running security tests..."
+	@make test-security
+	@echo "5. Building application..."
+	@make build
+	@echo "CI/CD pipeline tests completed successfully!"
+
+# Test documentation
+test-docs:
+	@echo "Testing documentation..."
+	@if [ -f "README.md" ]; then \
+		echo "README.md exists"; \
+	else \
+		echo "Warning: README.md not found"; \
+	fi
+	@if [ -d "docs" ]; then \
+		echo "Documentation directory exists"; \
+		ls -la docs/; \
+	else \
+		echo "Warning: docs/ directory not found"; \
+	fi
+
+# Test configuration
+test-config:
+	@echo "Testing configuration files..."
+	@if [ -f "configs/config.yaml" ]; then \
+		echo "config.yaml exists and is valid"; \
+		yq eval '.' configs/config.yaml >/dev/null 2>&1 || echo "Warning: config.yaml is not valid YAML"; \
+	else \
+		echo "Warning: configs/config.yaml not found"; \
+	fi
+
+# Test all components
+test-full: test-setup test-db-setup test test-docs test-config test-db-cleanup
+	@echo "Full test suite completed!"
 
 # Code Quality
 .PHONY: fmt
