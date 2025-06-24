@@ -214,8 +214,8 @@ func (c *Consumer) sendToDeadLetter(message *domain.KafkaMessage, err error, kaf
 		Error:      err.Error(),
 		RetryCount: message.Metadata.RetryCount,
 		MaxRetries: c.config.Kafka.RetryMaxAttempts,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
 	}
 
 	// Here you would typically save the dead letter message to the database

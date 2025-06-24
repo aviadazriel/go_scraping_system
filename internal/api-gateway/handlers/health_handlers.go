@@ -47,7 +47,7 @@ type HealthResponse struct {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	response := models.HealthResponse{
 		Status:    "healthy",
-		Timestamp: time.Now().Format(time.RFC3339),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Uptime:    "24h30m",
 		Version:   "1.0.0",
 		Checks: map[string]string{
@@ -84,7 +84,7 @@ func readinessHandler(w http.ResponseWriter, r *http.Request) {
 	// For now, always return ready
 	response := models.HealthResponse{
 		Status:    "ready",
-		Timestamp: time.Now().Format(time.RFC3339),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Uptime:    "24h30m",
 		Version:   "1.0.0",
 	}
@@ -117,7 +117,7 @@ func livenessHandler(w http.ResponseWriter, r *http.Request) {
 	// For now, always return alive
 	response := models.HealthResponse{
 		Status:    "alive",
-		Timestamp: time.Now().Format(time.RFC3339),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Uptime:    "24h30m",
 		Version:   "1.0.0",
 	}

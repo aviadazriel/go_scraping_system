@@ -169,7 +169,7 @@ func (p *Producer) HealthCheck(ctx context.Context) error {
 	testMessage := &domain.KafkaMessage{
 		ID:        uuid.New().String(),
 		Type:      domain.MessageTypeScrapingTask,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().UTC(),
 		Data:      map[string]string{"test": "health_check"},
 		Metadata: domain.Metadata{
 			CorrelationID: uuid.New().String(),

@@ -105,7 +105,7 @@ func NewKafkaMessage(messageType MessageType, data interface{}, correlationID st
 	return &KafkaMessage{
 		ID:        uuid.New().String(),
 		Type:      messageType,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().UTC(),
 		Data:      data,
 		Metadata: Metadata{
 			CorrelationID: correlationID,
@@ -157,7 +157,7 @@ func NewDeadLetterMessage(originalMessage *KafkaMessage, err error, maxRetries i
 	return NewKafkaMessage(MessageTypeDeadLetter, KafkaDeadLetterMessage{
 		OriginalMessage: *originalMessage,
 		Error:           err.Error(),
-		FailedAt:        time.Now(),
+		FailedAt:        time.Now().UTC(),
 		RetryCount:      0,
 		MaxRetries:      maxRetries,
 	}, originalMessage.Metadata.CorrelationID)
@@ -171,6 +171,6 @@ func NewRetryMessage(originalMessageID string, messageType MessageType, data int
 		Data:              data,
 		RetryCount:        retryCount,
 		MaxRetries:        maxRetries,
-		RetryAt:           time.Now().Add(retryDelay),
+		RetryAt:           time.Now().UTC().Add(retryDelay),
 	}, "")
 }

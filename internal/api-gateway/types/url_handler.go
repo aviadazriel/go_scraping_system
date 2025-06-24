@@ -71,7 +71,7 @@ func (h *URLHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Calculate next scrape time
-	nextScrape, err := h.calculateNextScrapeTime(req.Frequency, time.Now())
+	nextScrape, err := h.calculateNextScrapeTime(req.Frequency, time.Now().UTC())
 	if err != nil {
 		h.Logger.WithError(err).Error("Failed to calculate next scrape time")
 		http.Error(w, "Invalid frequency format", http.StatusBadRequest)

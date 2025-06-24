@@ -81,7 +81,8 @@ func (s *URLSchedulerService) runScheduler(ctx context.Context) {
 
 // processScheduledURLs processes URLs that are scheduled for scraping
 func (s *URLSchedulerService) processScheduledURLs(ctx context.Context) error {
-	now := time.Now()
+	// Use UTC for all time calculations
+	now := time.Now().UTC()
 	from := now.Add(-1 * time.Minute) // Include URLs that were due up to 1 minute ago
 	to := now.Add(5 * time.Minute)    // Include URLs due in the next 5 minutes
 
@@ -108,54 +109,48 @@ func (s *URLSchedulerService) processScheduledURLs(ctx context.Context) error {
 
 // processURL processes a single URL for scraping
 func (s *URLSchedulerService) processURL(ctx context.Context, url database.Url) error {
-	// Check if the URL is due for scraping
-	if !url.NextScrapeAt.Valid || url.NextScrapeAt.Time.After(time.Now()) {
-		return nil
+	// Check if URL is actually due (double-check to avoid race conditions)
+	if !url.NextScrapeAt.Valid || url.NextScrapeAt.Time.After(time.Now().UTC()) {
+		return nil // Not actually due yet
 	}
 
-	// Create a scraping task
-	task := &domain.ScrapingTask{
-		ID:        uuid.New(),
+	s.logger.Printf("Processing URL: %s (ID: %s)", url.Url, url.ID)
+
+	// Create scraping task message
+	taskID := uuid.New()
+	message := domain.ScrapingTaskMessage{
+		ID:        taskID,
 		URLID:     url.ID,
 		URL:       url.Url,
-		Status:    domain.URLStatusPending,
-		Attempt:   1,
-		CreatedAt: time.Now(),
+		UserAgent: url.UserAgent,
+		Timeout:   url.Timeout,
+		CreatedAt: time.Now().UTC(),
 	}
 
-	// Send the task to Kafka
-	message := domain.NewScrapingTaskMessage(task, uuid.New().String())
-	if err := s.producer.SendMessage(ctx, domain.TopicScrapingTasks, message); err != nil {
+	// Send message to Kafka
+	if err := s.producer.SendMessage(ctx, "scraping-tasks", taskID.String(), message); err != nil {
 		return fmt.Errorf("failed to send scraping task to Kafka: %w", err)
 	}
 
-	// Update URL status to in_progress
-	if err := s.urlRepo.UpdateURLStatus(ctx, url.ID, string(domain.URLStatusInProgress)); err != nil {
-		s.logger.WithError(err).WithField("url_id", url.ID).Error("Failed to update URL status")
+	s.logger.Printf("Sent scraping task to Kafka: %s", taskID)
+
+	// Update URL status and last scraped time
+	if err := s.urlRepo.UpdateLastScrapedTime(ctx, url.ID, time.Now().UTC()); err != nil {
+		return fmt.Errorf("failed to update last scraped time: %w", err)
 	}
 
-	// Update last scraped time
-	if err := s.urlRepo.UpdateLastScrapedTime(ctx, url.ID, time.Now()); err != nil {
-		s.logger.WithError(err).WithField("url_id", url.ID).Error("Failed to update last scraped time")
-	}
-
-	// Calculate and update next scrape time
-	nextScrape, err := models.CalculateNextScrapeTime(url.Frequency, time.Now())
+	// Calculate next scrape time
+	nextScrape, err := models.CalculateNextScrapeTime(url.Frequency, time.Now().UTC())
 	if err != nil {
-		s.logger.WithError(err).WithField("url_id", url.ID).Error("Failed to calculate next scrape time")
-		return err
+		return fmt.Errorf("failed to calculate next scrape time: %w", err)
 	}
 
+	// Update next scrape time
 	if err := s.urlRepo.UpdateNextScrapeTime(ctx, url.ID, nextScrape); err != nil {
-		s.logger.WithError(err).WithField("url_id", url.ID).Error("Failed to update next scrape time")
+		return fmt.Errorf("failed to update next scrape time: %w", err)
 	}
 
-	s.logger.WithFields(logrus.Fields{
-		"url_id":      url.ID,
-		"url":         url.Url,
-		"task_id":     task.ID,
-		"next_scrape": nextScrape,
-	}).Info("Created scraping task")
+	s.logger.Printf("Updated URL %s: next scrape at %s", url.ID, nextScrape.UTC().Format(time.RFC3339))
 
 	return nil
 }

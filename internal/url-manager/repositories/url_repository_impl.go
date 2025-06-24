@@ -142,7 +142,7 @@ func (r *URLRepositoryImpl) ResetRetryCount(ctx context.Context, id uuid.UUID) e
 // GetURLsForImmediateScraping retrieves URLs that should be scraped immediately
 func (r *URLRepositoryImpl) GetURLsForImmediateScraping(ctx context.Context, limit int32) ([]database.Url, error) {
 	urls, err := r.db.GetURLsForImmediateScraping(ctx, database.GetURLsForImmediateScrapingParams{
-		NextScrapeAt: sql.NullTime{Time: time.Now(), Valid: true},
+		NextScrapeAt: sql.NullTime{Time: time.Now().UTC(), Valid: true},
 		Limit:        limit,
 	})
 	if err != nil {
