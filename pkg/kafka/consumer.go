@@ -10,17 +10,17 @@ import (
 	"go_scraping_project/internal/config"
 	"go_scraping_project/internal/domain"
 
-	"github.com/Shopify/sarama"
 	"github.com/google/uuid"
+	"github.com/segmentio/kafka-go"
 	"github.com/sirupsen/logrus"
 )
 
-// MessageHandler defines the interface for handling Kafka messages
+// MessageHandler is a function type for handling Kafka messages
 type MessageHandler func(ctx context.Context, message *domain.KafkaMessage) error
 
-// Consumer represents a Kafka consumer
+// Consumer represents a Kafka consumer using kafka-go
 type Consumer struct {
-	consumer sarama.ConsumerGroup
+	readers  map[string]*kafka.Reader
 	config   *config.Config
 	logger   *logrus.Logger
 	handlers map[domain.MessageType]MessageHandler
@@ -29,37 +29,12 @@ type Consumer struct {
 	cancel   context.CancelFunc
 }
 
-// ConsumerGroup represents a consumer group
-type ConsumerGroup struct {
-	consumer *Consumer
-}
-
 // NewConsumer creates a new Kafka consumer
 func NewConsumer(cfg *config.Config, log *logrus.Logger) (*Consumer, error) {
-	config := sarama.NewConfig()
-	config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
-	config.Consumer.Offsets.Initial = sarama.OffsetOldest
-	config.Consumer.Offsets.AutoCommit.Enable = cfg.Kafka.EnableAutoCommit
-	config.Consumer.Offsets.AutoCommit.Interval = cfg.Kafka.AutoCommitInterval
-	config.Consumer.Offsets.CommitInterval = cfg.Kafka.AutoCommitInterval
-	config.Consumer.Group.Session.Timeout = cfg.Kafka.SessionTimeout
-	config.Consumer.Group.Heartbeat.Interval = cfg.Kafka.HeartbeatInterval
-	config.Consumer.MaxProcessingTime = cfg.Kafka.MaxPollInterval
-	config.Consumer.Fetch.Max = int32(cfg.Kafka.MaxPollRecords)
-	config.Consumer.Return.Errors = true
-
-	// Use the latest version
-	config.Version = sarama.V2_8_0_0
-
-	consumer, err := sarama.NewConsumerGroup(cfg.Kafka.Brokers, cfg.Kafka.GroupID, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create consumer: %w", err)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Consumer{
-		consumer: consumer,
+		readers:  make(map[string]*kafka.Reader),
 		config:   cfg,
 		logger:   log,
 		handlers: make(map[domain.MessageType]MessageHandler),
@@ -75,83 +50,102 @@ func (c *Consumer) RegisterHandler(messageType domain.MessageType, handler Messa
 	c.handlers[messageType] = handler
 }
 
+// getHandler returns the handler for a message type
+func (c *Consumer) getHandler(messageType domain.MessageType) (MessageHandler, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	handler, exists := c.handlers[messageType]
+	return handler, exists
+}
+
 // Consume starts consuming messages from the specified topics
 func (c *Consumer) Consume(topics []string) error {
 	c.logger.WithField("topics", topics).Info("Starting Kafka consumer")
 
+	var wg sync.WaitGroup
+
+	for _, topic := range topics {
+		reader := kafka.NewReader(kafka.ReaderConfig{
+			Brokers:         c.config.Kafka.Brokers,
+			Topic:           topic,
+			GroupID:         c.config.Kafka.GroupID,
+			MinBytes:        10e3, // 10KB
+			MaxBytes:        10e6, // 10MB
+			MaxWait:         1 * time.Second,
+			ReadLagInterval: -1,
+			Logger: kafka.LoggerFunc(func(msg string, args ...interface{}) {
+				c.logger.Debugf(msg, args...)
+			}),
+		})
+
+		c.mu.Lock()
+		c.readers[topic] = reader
+		c.mu.Unlock()
+
+		wg.Add(1)
+		go func(topic string, reader *kafka.Reader) {
+			defer wg.Done()
+			defer reader.Close()
+			c.consumeTopic(topic, reader)
+		}(topic, reader)
+	}
+
+	// Wait for context cancellation
+	<-c.ctx.Done()
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+
+	return c.ctx.Err()
+}
+
+// consumeTopic consumes messages from a specific topic
+func (c *Consumer) consumeTopic(topic string, reader *kafka.Reader) {
+	c.logger.WithField("topic", topic).Info("Starting to consume topic")
+
 	for {
 		select {
 		case <-c.ctx.Done():
-			return c.ctx.Err()
+			c.logger.WithField("topic", topic).Info("Stopping topic consumption")
+			return
 		default:
-			handler := &ConsumerGroup{consumer: c}
-			err := c.consumer.Consume(c.ctx, topics, handler)
+			msg, err := reader.ReadMessage(c.ctx)
 			if err != nil {
-				c.logger.WithError(err).Error("Error from consumer")
-				return fmt.Errorf("consumer error: %w", err)
-			}
-		}
-	}
-}
-
-// Setup is called when a new consumer group session is about to begin
-func (cg *ConsumerGroup) Setup(sarama.ConsumerGroupSession) error {
-	cg.consumer.logger.Info("Consumer group session setup")
-	return nil
-}
-
-// Cleanup is called when a consumer group session has ended
-func (cg *ConsumerGroup) Cleanup(sarama.ConsumerGroupSession) error {
-	cg.consumer.logger.Info("Consumer group session cleanup")
-	return nil
-}
-
-// ConsumeClaim processes messages from a partition
-func (cg *ConsumerGroup) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	for {
-		select {
-		case message := <-claim.Messages():
-			if message == nil {
+				if err == context.Canceled {
+					return
+				}
+				c.logger.WithError(err).WithField("topic", topic).Error("Failed to read message")
+				time.Sleep(100 * time.Millisecond) // Brief pause before retry
 				continue
 			}
 
-			cg.consumer.logger.WithFields(logrus.Fields{
-				"topic":     message.Topic,
-				"partition": message.Partition,
-				"offset":    message.Offset,
-				"key":       string(message.Key),
+			c.logger.WithFields(logrus.Fields{
+				"topic":     topic,
+				"partition": msg.Partition,
+				"offset":    msg.Offset,
+				"key":       string(msg.Key),
 			}).Debug("Received message")
 
 			// Parse the message
 			var kafkaMessage domain.KafkaMessage
-			if err := json.Unmarshal(message.Value, &kafkaMessage); err != nil {
-				cg.consumer.logger.WithError(err).Error("Failed to unmarshal message")
-				session.MarkMessage(message, "")
+			if err := json.Unmarshal(msg.Value, &kafkaMessage); err != nil {
+				c.logger.WithError(err).Error("Failed to unmarshal message")
 				continue
 			}
 
 			// Process the message
-			if err := cg.processMessage(session.Context(), &kafkaMessage, message); err != nil {
-				cg.consumer.logger.WithError(err).Error("Failed to process message")
+			if err := c.processMessage(c.ctx, &kafkaMessage, &msg); err != nil {
+				c.logger.WithError(err).Error("Failed to process message")
 				// Don't mark as consumed, let it be retried
 				continue
 			}
-
-			// Mark message as consumed
-			session.MarkMessage(message, "")
-
-		case <-session.Context().Done():
-			return nil
 		}
 	}
 }
 
 // processMessage processes a single message
-func (cg *ConsumerGroup) processMessage(ctx context.Context, message *domain.KafkaMessage, saramaMessage *sarama.ConsumerMessage) error {
-	cg.consumer.mu.RLock()
-	handler, exists := cg.consumer.handlers[message.Type]
-	cg.consumer.mu.RUnlock()
-
+func (c *Consumer) processMessage(ctx context.Context, message *domain.KafkaMessage, kafkaMsg *kafka.Message) error {
+	handler, exists := c.getHandler(message.Type)
 	if !exists {
 		return fmt.Errorf("no handler registered for message type: %s", message.Type)
 	}
@@ -162,12 +156,12 @@ func (cg *ConsumerGroup) processMessage(ctx context.Context, message *domain.Kaf
 	}
 
 	// Process the message with retry logic
-	return cg.processWithRetry(ctx, message, handler, saramaMessage)
+	return c.processWithRetry(ctx, message, handler, kafkaMsg)
 }
 
 // processWithRetry processes a message with retry logic
-func (cg *ConsumerGroup) processWithRetry(ctx context.Context, message *domain.KafkaMessage, handler MessageHandler, saramaMessage *sarama.ConsumerMessage) error {
-	maxRetries := cg.consumer.config.Kafka.RetryMaxAttempts
+func (c *Consumer) processWithRetry(ctx context.Context, message *domain.KafkaMessage, handler MessageHandler, kafkaMsg *kafka.Message) error {
+	maxRetries := c.config.Kafka.RetryMaxAttempts
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		err := handler(ctx, message)
@@ -175,7 +169,7 @@ func (cg *ConsumerGroup) processWithRetry(ctx context.Context, message *domain.K
 			return nil
 		}
 
-		cg.consumer.logger.WithFields(logrus.Fields{
+		c.logger.WithFields(logrus.Fields{
 			"message_id":   message.ID,
 			"message_type": message.Type,
 			"attempt":      attempt + 1,
@@ -185,11 +179,11 @@ func (cg *ConsumerGroup) processWithRetry(ctx context.Context, message *domain.K
 
 		// If this is the last attempt, send to dead letter queue
 		if attempt == maxRetries {
-			return cg.sendToDeadLetter(message, err, saramaMessage)
+			return c.sendToDeadLetter(message, err, kafkaMsg)
 		}
 
 		// Wait before retrying
-		backoff := cg.consumer.config.Kafka.RetryBackoff * time.Duration(attempt+1)
+		backoff := c.config.Kafka.RetryBackoff * time.Duration(attempt+1)
 		select {
 		case <-time.After(backoff):
 			continue
@@ -202,31 +196,31 @@ func (cg *ConsumerGroup) processWithRetry(ctx context.Context, message *domain.K
 }
 
 // sendToDeadLetter sends a failed message to the dead letter queue
-func (cg *ConsumerGroup) sendToDeadLetter(message *domain.KafkaMessage, err error, saramaMessage *sarama.ConsumerMessage) error {
+func (c *Consumer) sendToDeadLetter(message *domain.KafkaMessage, err error, kafkaMsg *kafka.Message) error {
 	// Parse message ID as UUID
 	messageID, parseErr := uuid.Parse(message.ID)
 	if parseErr != nil {
-		cg.consumer.logger.WithError(parseErr).Error("Failed to parse message ID as UUID")
+		c.logger.WithError(parseErr).Error("Failed to parse message ID as UUID")
 		messageID = uuid.New() // Fallback to new UUID
 	}
 
 	deadLetterMsg := &domain.DeadLetterMessage{
 		ID:         messageID,
-		Topic:      saramaMessage.Topic,
-		Partition:  saramaMessage.Partition,
-		Offset:     saramaMessage.Offset,
-		Key:        saramaMessage.Key,
-		Value:      saramaMessage.Value,
+		Topic:      kafkaMsg.Topic,
+		Partition:  int32(kafkaMsg.Partition),
+		Offset:     kafkaMsg.Offset,
+		Key:        kafkaMsg.Key,
+		Value:      kafkaMsg.Value,
 		Error:      err.Error(),
 		RetryCount: message.Metadata.RetryCount,
-		MaxRetries: cg.consumer.config.Kafka.RetryMaxAttempts,
+		MaxRetries: c.config.Kafka.RetryMaxAttempts,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
 
 	// Here you would typically save the dead letter message to the database
 	// For now, we'll just log it
-	cg.consumer.logger.WithFields(logrus.Fields{
+	c.logger.WithFields(logrus.Fields{
 		"message_id":  deadLetterMsg.ID,
 		"topic":       deadLetterMsg.Topic,
 		"error":       deadLetterMsg.Error,
@@ -237,10 +231,22 @@ func (cg *ConsumerGroup) sendToDeadLetter(message *domain.KafkaMessage, err erro
 	return err
 }
 
-// Close closes the consumer
+// Close closes the consumer and all readers
 func (c *Consumer) Close() error {
 	c.cancel()
-	return c.consumer.Close()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var lastErr error
+	for topic, reader := range c.readers {
+		if err := reader.Close(); err != nil {
+			c.logger.WithError(err).WithField("topic", topic).Error("Failed to close reader")
+			lastErr = err
+		}
+	}
+
+	return lastErr
 }
 
 // HealthCheck performs a consumer health check

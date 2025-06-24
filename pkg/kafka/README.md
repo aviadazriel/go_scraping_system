@@ -1,28 +1,37 @@
 # Kafka Package
 
-This package provides Kafka producer and consumer functionality for the scraping microservices system. It includes both low-level implementations and convenient wrappers that implement domain interfaces.
+This package provides Kafka producer and consumer functionality for the scraping microservices system using **kafka-go**. It includes both low-level implementations and convenient wrappers that implement domain interfaces.
+
+## Technology Choice
+
+We use **kafka-go** instead of Sarama because:
+- **Simpler, more Go-idiomatic API**
+- **Lower memory usage** and better GC characteristics
+- **Built for Go** from the ground up
+- **Active development** and modern Go features
+- **Context support** throughout the API
 
 ## Components
 
 ### Core Components
 
 #### `Producer`
-- **Purpose**: Low-level Kafka producer implementation
+- **Purpose**: Low-level Kafka producer implementation using kafka-go
 - **Features**:
-  - Synchronous message production
-  - Retry logic with exponential backoff
-  - Message compression (Snappy)
-  - Structured logging
-  - Health checks
+  - **Topic-based writers** with connection pooling
+  - **Synchronous message production** for reliability
+  - **Automatic batching** for performance
+  - **Structured logging** with correlation IDs
+  - **Health checks** and error handling
 
 #### `Consumer`
-- **Purpose**: Low-level Kafka consumer implementation
+- **Purpose**: Low-level Kafka consumer implementation using kafka-go
 - **Features**:
-  - Consumer group support
-  - Message retry logic
-  - Dead letter queue handling
-  - Structured logging
-  - Health checks
+  - **Consumer group support** with automatic rebalancing
+  - **Message retry logic** with exponential backoff
+  - **Dead letter queue** handling
+  - **Concurrent topic consumption** with goroutines
+  - **Graceful shutdown** with context cancellation
 
 ### Wrapper Components
 
@@ -83,6 +92,33 @@ kafkaConsumer.RegisterHandler(domain.MessageTypeScrapingTask, func(ctx context.C
 err = kafkaConsumer.Consume([]string{domain.TopicScrapingTasks})
 ```
 
+## Configuration
+
+### Producer Configuration
+```go
+writer := kafka.NewWriter(kafka.WriterConfig{
+    Brokers:      []string{"localhost:9092"},
+    Topic:        "scraping-tasks",
+    BatchSize:    100,                    // Messages per batch
+    BatchTimeout: 10 * time.Millisecond,  // Max wait for batch
+    RequiredAcks: -1,                     // Require all replicas
+    Async:        false,                  // Synchronous for reliability
+})
+```
+
+### Consumer Configuration
+```go
+reader := kafka.NewReader(kafka.ReaderConfig{
+    Brokers:         []string{"localhost:9092"},
+    Topic:           "scraping-tasks",
+    GroupID:         "scraper-group",
+    MinBytes:        10e3,                // 10KB min message size
+    MaxBytes:        10e6,                // 10MB max message size
+    MaxWait:         1 * time.Second,     // Max wait for messages
+    ReadLagInterval: -1,                  // Disable lag monitoring
+})
+```
+
 ## Message Types
 
 ### Scraping Tasks
@@ -115,35 +151,10 @@ err = kafkaConsumer.Consume([]string{domain.TopicScrapingTasks})
 - **Producer**: All services
 - **Consumers**: All services
 
-## Configuration
-
-### Producer Configuration
-```go
-config.Producer.RequiredAcks = sarama.WaitForAll
-config.Producer.Retry.Max = cfg.Kafka.RetryMaxAttempts
-config.Producer.Retry.Backoff = cfg.Kafka.RetryBackoff
-config.Producer.Return.Successes = true
-config.Producer.Return.Errors = true
-config.Producer.Compression = sarama.CompressionSnappy
-config.Producer.Timeout = 10 * time.Second
-```
-
-### Consumer Configuration
-```go
-config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
-config.Consumer.Offsets.Initial = sarama.OffsetOldest
-config.Consumer.Offsets.AutoCommit.Enable = cfg.Kafka.EnableAutoCommit
-config.Consumer.Offsets.AutoCommit.Interval = cfg.Kafka.AutoCommitInterval
-config.Consumer.Group.Session.Timeout = cfg.Kafka.SessionTimeout
-config.Consumer.Group.Heartbeat.Interval = cfg.Kafka.HeartbeatInterval
-config.Consumer.MaxProcessingTime = cfg.Kafka.MaxPollInterval
-config.Consumer.Fetch.Max = int32(cfg.Kafka.MaxPollRecords)
-```
-
 ## Error Handling
 
 ### Producer Errors
-- **Connection Issues**: Retry with exponential backoff
+- **Connection Issues**: Automatic retry with exponential backoff
 - **Message Serialization**: Log error and skip message
 - **Topic Issues**: Alert and stop processing
 
@@ -151,6 +162,20 @@ config.Consumer.Fetch.Max = int32(cfg.Kafka.MaxPollRecords)
 - **Message Processing**: Retry with backoff, then dead letter queue
 - **Deserialization Errors**: Log and skip message
 - **Handler Errors**: Retry up to max attempts
+
+## Performance Optimizations
+
+### Producer Optimizations
+- **Connection pooling** per topic
+- **Message batching** for throughput
+- **Compression** for large messages
+- **Async/sync modes** for different use cases
+
+### Consumer Optimizations
+- **Concurrent topic consumption** with goroutines
+- **Batch message processing** where possible
+- **Efficient memory usage** with streaming
+- **Graceful shutdown** with context cancellation
 
 ## Best Practices
 
@@ -210,6 +235,20 @@ err = producer.SendScrapingTask(ctx, task)
 - Correlation IDs for message tracing
 - Error context and stack traces
 - Performance metrics
+
+## Migration from Sarama
+
+This package was migrated from Sarama to kafka-go for:
+- **Simpler API** and better Go integration
+- **Lower memory usage** and better performance
+- **Active development** and modern features
+- **Better context support** throughout
+
+### Key Differences
+- **Simpler configuration** with fewer options
+- **Topic-based writers** instead of single producer
+- **Reader-based consumers** instead of consumer groups
+- **Better error handling** with context cancellation
 
 ## Troubleshooting
 

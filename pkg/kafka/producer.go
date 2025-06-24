@@ -4,78 +4,96 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"go_scraping_project/internal/config"
 	"go_scraping_project/internal/domain"
 
-	"github.com/Shopify/sarama"
 	"github.com/google/uuid"
+	"github.com/segmentio/kafka-go"
 	"github.com/sirupsen/logrus"
 )
 
-// Producer represents a Kafka producer
+// Producer represents a Kafka producer using kafka-go
 type Producer struct {
-	producer sarama.SyncProducer
-	config   *config.Config
-	logger   *logrus.Logger
+	writers map[string]*kafka.Writer
+	config  *config.Config
+	logger  *logrus.Logger
+	mu      sync.RWMutex
 }
 
 // NewProducer creates a new Kafka producer
 func NewProducer(cfg *config.Config, log *logrus.Logger) (*Producer, error) {
-	config := sarama.NewConfig()
-	config.Producer.RequiredAcks = sarama.WaitForAll
-	config.Producer.Retry.Max = cfg.Kafka.RetryMaxAttempts
-	config.Producer.Retry.Backoff = cfg.Kafka.RetryBackoff
-	config.Producer.Return.Successes = true
-	config.Producer.Return.Errors = true
-	config.Producer.Compression = sarama.CompressionSnappy
-	config.Producer.Timeout = 10 * time.Second
+	return &Producer{
+		writers: make(map[string]*kafka.Writer),
+		config:  cfg,
+		logger:  log,
+	}, nil
+}
 
-	// Use the latest version
-	config.Version = sarama.V2_8_0_0
+// getWriter returns or creates a writer for the given topic
+func (p *Producer) getWriter(topic string) *kafka.Writer {
+	p.mu.RLock()
+	writer, exists := p.writers[topic]
+	p.mu.RUnlock()
 
-	producer, err := sarama.NewSyncProducer(cfg.Kafka.Brokers, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create producer: %w", err)
+	if exists {
+		return writer
 	}
 
-	return &Producer{
-		producer: producer,
-		config:   cfg,
-		logger:   log,
-	}, nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if writer, exists = p.writers[topic]; exists {
+		return writer
+	}
+
+	writer = kafka.NewWriter(kafka.WriterConfig{
+		Brokers:      p.config.Kafka.Brokers,
+		Topic:        topic,
+		BatchSize:    100,
+		BatchTimeout: 10 * time.Millisecond,
+		RequiredAcks: -1,    // Require all replicas to acknowledge
+		Async:        false, // Use sync for reliability
+		Logger: kafka.LoggerFunc(func(msg string, args ...interface{}) {
+			p.logger.Debugf(msg, args...)
+		}),
+	})
+
+	p.writers[topic] = writer
+	return writer
 }
 
 // SendMessage sends a message to a Kafka topic
 func (p *Producer) SendMessage(ctx context.Context, topic string, message *domain.KafkaMessage) error {
+	writer := p.getWriter(topic)
+
 	data, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	msg := &sarama.ProducerMessage{
-		Topic: topic,
-		Key:   sarama.StringEncoder(message.ID),
-		Value: sarama.ByteEncoder(data),
-		Headers: []sarama.RecordHeader{
-			{Key: []byte("message_type"), Value: []byte(string(message.Type))},
-			{Key: []byte("correlation_id"), Value: []byte(message.Metadata.CorrelationID)},
-			{Key: []byte("timestamp"), Value: []byte(message.Timestamp.Format(time.RFC3339))},
+	kafkaMsg := kafka.Message{
+		Key:   []byte(message.ID),
+		Value: data,
+		Headers: []kafka.Header{
+			{Key: "message_type", Value: []byte(string(message.Type))},
+			{Key: "correlation_id", Value: []byte(message.Metadata.CorrelationID)},
+			{Key: "timestamp", Value: []byte(message.Timestamp.Format(time.RFC3339))},
 		},
 	}
 
-	partition, offset, err := p.producer.SendMessage(msg)
+	err = writer.WriteMessages(ctx, kafkaMsg)
 	if err != nil {
 		return fmt.Errorf("failed to send message to topic %s: %w", topic, err)
 	}
 
 	p.logger.WithFields(logrus.Fields{
-		"topic":     topic,
-		"partition": partition,
-		"offset":    offset,
+		"topic":      topic,
 		"message_id": message.ID,
-		"type":      message.Type,
+		"type":       message.Type,
 	}).Debug("Message sent successfully")
 
 	return nil
@@ -126,9 +144,20 @@ func (p *Producer) SendRetryMessage(ctx context.Context, originalMessageID strin
 	return p.SendMessage(ctx, domain.TopicRetry, message)
 }
 
-// Close closes the producer
+// Close closes all writers
 func (p *Producer) Close() error {
-	return p.producer.Close()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var lastErr error
+	for topic, writer := range p.writers {
+		if err := writer.Close(); err != nil {
+			p.logger.WithError(err).WithField("topic", topic).Error("Failed to close writer")
+			lastErr = err
+		}
+	}
+
+	return lastErr
 }
 
 // HealthCheck performs a producer health check
@@ -146,4 +175,4 @@ func (p *Producer) HealthCheck(ctx context.Context) error {
 	}
 
 	return p.SendMessage(ctx, "health-check", testMessage)
-} 
+}
