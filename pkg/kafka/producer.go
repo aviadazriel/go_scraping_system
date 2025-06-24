@@ -15,13 +15,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Producer represents a Kafka producer using kafka-go
+// Producer represents a Kafka producer using kafka-go and implements domain.KafkaProducer
 type Producer struct {
 	writers map[string]*kafka.Writer
 	config  *config.Config
 	logger  *logrus.Logger
 	mu      sync.RWMutex
 }
+
+// Ensure Producer implements domain.KafkaProducer
+var _ domain.KafkaProducer = (*Producer)(nil)
 
 // NewProducer creates a new Kafka producer
 func NewProducer(cfg *config.Config, log *logrus.Logger) (*Producer, error) {
@@ -123,15 +126,15 @@ func (p *Producer) SendParsedData(ctx context.Context, data *domain.ParsedData) 
 	return p.SendMessage(ctx, domain.TopicParsedData, message)
 }
 
-// SendDeadLetterMessage sends a dead letter message
-func (p *Producer) SendDeadLetterMessage(ctx context.Context, originalMessage *domain.KafkaMessage, err error) error {
+// SendDeadLetter sends a dead letter message
+func (p *Producer) SendDeadLetter(ctx context.Context, originalMessage *domain.KafkaMessage, err error, maxRetries int) error {
 	message := domain.NewDeadLetterMessage(originalMessage, err, p.config.Kafka.RetryMaxAttempts)
 
 	return p.SendMessage(ctx, domain.TopicDeadLetter, message)
 }
 
 // SendRetryMessage sends a retry message
-func (p *Producer) SendRetryMessage(ctx context.Context, originalMessageID string, messageType domain.MessageType, data interface{}, retryCount int) error {
+func (p *Producer) SendRetryMessage(ctx context.Context, originalMessageID string, messageType domain.MessageType, data interface{}, retryCount, maxRetries int, retryDelay time.Duration) error {
 	message := domain.NewRetryMessage(
 		originalMessageID,
 		messageType,

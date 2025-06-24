@@ -18,6 +18,7 @@ We use **kafka-go** instead of Sarama because:
 #### `Producer`
 - **Purpose**: Low-level Kafka producer implementation using kafka-go
 - **Features**:
+  - **Implements domain.KafkaProducer interface directly**
   - **Topic-based writers** with connection pooling
   - **Synchronous message production** for reliability
   - **Automatic batching** for performance
@@ -35,14 +36,6 @@ We use **kafka-go** instead of Sarama because:
 
 ### Wrapper Components
 
-#### `KafkaProducerWrapper`
-- **Purpose**: Wraps the `Producer` to implement `domain.KafkaProducer` interface
-- **Benefits**:
-  - Clean separation between domain interfaces and implementation
-  - Consistent interface across all services
-  - Easy testing with mocks
-  - Type safety
-
 #### `KafkaConsumerWrapper`
 - **Purpose**: Wraps the `Consumer` to provide a simplified interface
 - **Benefits**:
@@ -55,18 +48,15 @@ We use **kafka-go** instead of Sarama because:
 ### Producer Usage
 
 ```go
-// Create a producer
+// Create a producer (implements domain.KafkaProducer directly)
 producer, err := kafka.NewProducer(cfg, log)
 if err != nil {
     log.Fatalf("Failed to create producer: %v", err)
 }
 defer producer.Close()
 
-// Wrap it for domain interface compatibility
-kafkaProducer := kafka.NewKafkaProducerWrapper(producer)
-
-// Use in services
-schedulerService := services.NewURLSchedulerService(urlRepo, kafkaProducer, log)
+// Use directly in services (no wrapper needed)
+schedulerService := services.NewURLSchedulerService(urlRepo, producer, log)
 ```
 
 ### Consumer Usage

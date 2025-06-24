@@ -68,8 +68,8 @@ func main() {
 		}
 	}()
 
-	// Wrap Kafka producer to match domain interface
-	kafkaProducer := kafka.NewKafkaProducerWrapper(producer)
+	// Producer now implements domain.KafkaProducer directly
+	kafkaProducer := producer
 
 	// Initialize URL scheduler service
 	schedulerService := services.NewURLSchedulerService(urlRepo, kafkaProducer, log)
