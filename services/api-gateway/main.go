@@ -53,8 +53,32 @@ func main() {
 		logger.SetLevel(logrus.InfoLevel)
 	}
 
+	// Set DATABASE_URL environment variable for shared database package
+	// Prioritize environment variable over config
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		// Fallback to building from config
+		dbHost := cfg.GetString("database.host")
+		dbPort := cfg.GetInt("database.port")
+		dbUser := cfg.GetString("database.user")
+		dbPassword := cfg.GetString("database.password")
+		dbName := cfg.GetString("database.database")
+		dbSSLMode := cfg.GetString("database.ssl_mode")
+
+		if dbName == "" {
+			dbName = "scraping_db" // fallback
+		}
+		if dbSSLMode == "" {
+			dbSSLMode = "disable" // fallback
+		}
+
+		databaseURL = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+			dbUser, dbPassword, dbHost, dbPort, dbName, dbSSLMode)
+		os.Setenv("DATABASE_URL", databaseURL)
+	}
+
 	// Initialize database connection
-	db, err := database.ConnectWithConfig(cfg)
+	db, err := database.Connect()
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to connect to database")
 	}

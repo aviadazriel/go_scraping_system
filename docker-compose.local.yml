@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Kafka (Zookeeper + Kafka)
   zookeeper:
@@ -18,7 +16,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - scraping_network
+      - scraper-network
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
@@ -51,7 +49,7 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - scraping_network
+      - scraper-network
 
   # Kafka UI (Optional - for monitoring)
   kafka-ui:
@@ -68,85 +66,58 @@ services:
     ports:
       - "8080:8080"
     networks:
-      - scraping_network
+      - scraper-network
 
   # URL Manager Service
   url-manager:
     build:
       context: .
-      dockerfile: cmd/url-manager/Dockerfile
+      dockerfile: services/url-manager/Dockerfile
     container_name: scraping_url_manager
     restart: unless-stopped
     depends_on:
       kafka:
         condition: service_healthy
     environment:
-      # Database configuration (using your local PostgreSQL)
-      SCRAPING_DATABASE_HOST: host.docker.internal
-      SCRAPING_DATABASE_PORT: 5432
-      SCRAPING_DATABASE_USER: scraper
-      SCRAPING_DATABASE_PASSWORD: scraper_password
-      SCRAPING_DATABASE_NAME: scraper
-      SCRAPING_DATABASE_SSL_MODE: disable
+      # Database configuration - use local database
+      DATABASE_URL: postgres://scraper:scraper@host.docker.internal:5432/scraping_db?sslmode=disable
       
       # Kafka configuration
-      SCRAPING_KAFKA_BROKERS: kafka:29092
-      SCRAPING_KAFKA_GROUP_ID: url-manager-group
-      SCRAPING_KAFKA_RETRY_MAX_ATTEMPTS: 3
-      SCRAPING_KAFKA_RETRY_BACKOFF: 1s
-      
-      # Server configuration
-      SCRAPING_SERVER_PORT: 8080
-      SCRAPING_SERVER_READ_TIMEOUT: 30s
-      SCRAPING_SERVER_WRITE_TIMEOUT: 30s
-      SCRAPING_SERVER_IDLE_TIMEOUT: 60s
+      KAFKA_BROKERS: kafka:29092
       
       # Logging
-      SCRAPING_LOG_LEVEL: info
-      SCRAPING_LOG_FORMAT: json
+      LOG_LEVEL: info
       
       # Timezone
       TZ: UTC
     ports:
-      - "8081:8080"
+      - "8081:8081"
     volumes:
       - ./configs:/app/configs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - scraping_network
+      - scraper-network
 
   # API Gateway Service
   api-gateway:
     build:
       context: .
-      dockerfile: cmd/api-gateway/Dockerfile
+      dockerfile: services/api-gateway/Dockerfile
     container_name: scraping_api_gateway
     restart: unless-stopped
     depends_on:
       url-manager:
         condition: service_started
     environment:
-      # Database configuration (using your local PostgreSQL)
-      DB_HOST: host.docker.internal
-      DB_PORT: 5432
-      DB_USER: scraper
-      DB_PASSWORD: scraper_password
-      DB_NAME: scraper
-      DB_SSL_MODE: disable
+      # Database configuration - use local database
+      DATABASE_URL: postgres://scraper:scraper@host.docker.internal:5432/scraping_db?sslmode=disable
       
-      # URL Manager service
-      URL_MANAGER_URL: http://url-manager:8080
-      
-      # Server configuration
-      SERVER_PORT: 8080
-      SERVER_READ_TIMEOUT: 30s
-      SERVER_WRITE_TIMEOUT: 30s
-      SERVER_IDLE_TIMEOUT: 60s
+      # Kafka configuration
+      KAFKA_BROKERS: kafka:29092
       
       # Logging
       LOG_LEVEL: info
-      LOG_FORMAT: json
       
       # Timezone
       TZ: UTC
@@ -163,7 +134,7 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - scraping_network
+      - scraper-network
 
 volumes:
   zookeeper_data:
@@ -174,5 +145,5 @@ volumes:
     driver: local
 
 networks:
-  scraping_network:
+  scraper-network:
     driver: bridge 

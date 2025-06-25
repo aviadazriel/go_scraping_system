@@ -127,7 +127,7 @@ func (s *URLSchedulerService) processScheduledURLs(ctx context.Context) error {
 	now := time.Now().UTC()
 	from := now.Add(-1 * time.Minute) // Include URLs that were due up to 1 minute ago
 	to := now.Add(5 * time.Minute)    // Include URLs due in the next 5 minutes
-
+	s.logger.Info("Getting scheduled URLs")
 	urls, err := s.urlRepo.GetURLsScheduledForScraping(ctx, from, to, 100)
 	if err != nil {
 		return fmt.Errorf("failed to get scheduled URLs: %w", err)
@@ -152,6 +152,7 @@ func (s *URLSchedulerService) processScheduledURLs(ctx context.Context) error {
 // processURL processes a single URL for scraping
 func (s *URLSchedulerService) processURL(ctx context.Context, url database.Url) error {
 	if !url.NextScrapeAt.Valid || url.NextScrapeAt.Time.After(time.Now().UTC()) {
+		s.logger.Printf("URL %s is not due yet", url.Url)
 		return nil // Not actually due yet
 	}
 

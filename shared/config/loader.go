@@ -24,6 +24,7 @@ func (l *Loader) LoadServiceConfig(serviceName string) error {
 	// Set up viper configuration
 	l.viper.SetConfigName(serviceName)
 	l.viper.SetConfigType("yaml")
+	l.viper.AddConfigPath("/app/configs")  // Docker container path
 	l.viper.AddConfigPath("../../configs") // Relative to shared/config/
 	l.viper.AddConfigPath("../configs")    // Alternative path
 	l.viper.AddConfigPath("./configs")     // Current directory
@@ -46,9 +47,10 @@ func (l *Loader) loadSharedConfig() error {
 	sharedViper := viper.New()
 	sharedViper.SetConfigName("shared")
 	sharedViper.SetConfigType("yaml")
-	sharedViper.AddConfigPath("../../configs")
-	sharedViper.AddConfigPath("../configs")
-	sharedViper.AddConfigPath("./configs")
+	sharedViper.AddConfigPath("/app/configs")  // Docker container path
+	sharedViper.AddConfigPath("../../configs") // Relative to shared/config/
+	sharedViper.AddConfigPath("../configs")    // Alternative path
+	sharedViper.AddConfigPath("./configs")     // Current directory
 
 	if err := sharedViper.ReadInConfig(); err != nil {
 		return fmt.Errorf("failed to read shared config: %w", err)

@@ -44,23 +44,28 @@ func main() {
 	logger.SetLevel(level)
 
 	// Set DATABASE_URL environment variable for shared database package
-	dbHost := loader.GetString("database.host")
-	dbPort := loader.GetInt("database.port")
-	dbUser := loader.GetString("database.user")
-	dbPassword := loader.GetString("database.password")
-	dbName := loader.GetString("database.db_name")
-	dbSSLMode := loader.GetString("database.ssl_mode")
+	// Prioritize environment variable over config file
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		// Fallback to building from config
+		dbHost := loader.GetString("database.host")
+		dbPort := loader.GetInt("database.port")
+		dbUser := loader.GetString("database.user")
+		dbPassword := loader.GetString("database.password")
+		dbName := loader.GetString("database.db_name")
+		dbSSLMode := loader.GetString("database.ssl_mode")
 
-	if dbName == "" {
-		dbName = "scraping_db" // fallback
-	}
-	if dbSSLMode == "" {
-		dbSSLMode = "disable" // fallback
-	}
+		if dbName == "" {
+			dbName = "scraping_db" // fallback
+		}
+		if dbSSLMode == "" {
+			dbSSLMode = "disable" // fallback
+		}
 
-	databaseURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		dbUser, dbPassword, dbHost, dbPort, dbName, dbSSLMode)
-	os.Setenv("DATABASE_URL", databaseURL)
+		databaseURL = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+			dbUser, dbPassword, dbHost, dbPort, dbName, dbSSLMode)
+		os.Setenv("DATABASE_URL", databaseURL)
+	}
 
 	// Initialize database connection
 	db, err := database.Connect()

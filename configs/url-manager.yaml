@@ -13,8 +13,8 @@ database:
   # Can override specific settings here if needed
 
 kafka:
-  # Inherits from shared.yaml
-  # Can override specific settings here if needed
+  brokers:
+    - kafka:29092
   topics:
     scraping_requests: scraping-requests
     scraping_results: scraping-results

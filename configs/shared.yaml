@@ -15,7 +15,7 @@ database:
 
 kafka:
   brokers:
-    - localhost:9092
+    - kafka:29092
   group_id: scraper-group
   auto_offset_reset: earliest
   enable_auto_commit: true

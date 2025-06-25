@@ -1,13 +1,16 @@
 # Multi-Project Monorepo Makefile
 
-.PHONY: help build-all test-all clean-all docker-build-all docker-run-all dev-setup-all
+.PHONY: help build test clean deps fmt lint migrate-up migrate-down migrate-status sqlc-generate sqlc-check create-kafka-topics
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  build-all        - Build all services"
-	@echo "  test-all         - Run tests for all services"
-	@echo "  clean-all        - Clean all build artifacts"
+	@echo "  build            - Build all services"
+	@echo "  test             - Run tests for all services"
+	@echo "  clean            - Clean all build artifacts"
+	@echo "  deps             - Install dependencies for all services"
+	@echo "  fmt              - Format code for all services"
+	@echo "  lint             - Lint code for all services"
 	@echo "  docker-build-all - Build Docker images for all services"
 	@echo "  docker-run-all   - Run all services in Docker"
 	@echo "  dev-setup-all    - Setup development environment for all services"
@@ -15,12 +18,35 @@ help:
 	@echo "  url-manager      - Build and run URL Manager service"
 	@echo ""
 	@echo "Database commands:"
-	@echo "  db-setup         - Setup database (migrate + generate)"
-	@echo "  db-migrate-up    - Run database migrations"
-	@echo "  db-migrate-down  - Rollback last migration"
-	@echo "  db-migrate-status- Show migration status"
+	@echo "  migrate-up       - Run database migrations"
+	@echo "  migrate-down     - Rollback last migration"
+	@echo "  migrate-status   - Show migration status"
 	@echo "  sqlc-generate    - Generate Go code from SQL"
 	@echo "  sqlc-check       - Check SQLC configuration"
+	@echo "  create-kafka-topics - Create required Kafka topics for deployment"
+
+# Build all services
+build: build-all
+
+# Test all services
+test: test-all
+
+# Clean all build artifacts
+clean: clean-all
+
+# Install dependencies for all services
+deps: deps-all
+
+# Format code for all services
+fmt: fmt-all
+
+# Lint code for all services
+lint: lint-all
+
+# Database migration shortcuts
+migrate-up: db-migrate-up
+migrate-down: db-migrate-down
+migrate-status: db-migrate-status
 
 # Build all services
 build-all:
@@ -118,3 +144,7 @@ sqlc-generate:
 sqlc-check:
 	@echo "Checking SQLC configuration..."
 	@cd shared/database && make sqlc-check
+
+create-kafka-topics:
+	docker exec scraping_kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic scraping-tasks --partitions 1 --replication-factor 1
+	# Add more topics as needed (e.g. scraping-results, url-updates)
