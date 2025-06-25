@@ -1,6 +1,6 @@
 # Multi-Project Monorepo Makefile
 
-.PHONY: help build test clean deps fmt lint migrate-up migrate-down migrate-status sqlc-generate sqlc-check create-kafka-topics
+.PHONY: help build test clean deps fmt lint migrate-up migrate-down migrate-status sqlc-generate sqlc-check create-kafka-topics infrastructure-up infrastructure-down dev-local
 
 # Default target
 help:
@@ -16,6 +16,9 @@ help:
 	@echo "  dev-setup-all    - Setup development environment for all services"
 	@echo "  api-gateway      - Build and run API Gateway service"
 	@echo "  url-manager      - Build and run URL Manager service"
+	@echo "  infrastructure-up   - Start only infrastructure services (Kafka, Zookeeper, PostgreSQL)"
+	@echo "  infrastructure-down - Stop infrastructure services"
+	@echo "  dev-local        - Setup for local development (infrastructure + local services)"
 	@echo ""
 	@echo "Database commands:"
 	@echo "  migrate-up       - Run database migrations"
@@ -47,6 +50,40 @@ lint: lint-all
 migrate-up: db-migrate-up
 migrate-down: db-migrate-down
 migrate-status: db-migrate-status
+
+# Infrastructure only (for local development)
+infrastructure-up:
+	@echo "Starting infrastructure services (Kafka, Zookeeper, PostgreSQL)..."
+	@docker-compose -f docker-compose.infrastructure.yml up -d
+	@echo "Waiting for services to be ready..."
+	@sleep 15
+	@echo "Waiting for Kafka to be ready..."
+	@until docker exec scraper-kafka kafka-topics --bootstrap-server localhost:9092 --list > /dev/null 2>&1; do \
+		echo "Waiting for Kafka..."; \
+		sleep 5; \
+	done
+	@echo "Creating Kafka topics..."
+	@make create-kafka-topics
+	@echo "Running database migrations..."
+	@make migrate-up
+	@echo "Infrastructure is ready! You can now run services locally:"
+	@echo "  make api-gateway    # Run API Gateway locally (port 8080)"
+	@echo "  make url-manager    # Run URL Manager locally"
+	@echo "  Kafka UI available at: http://localhost:8081"
+
+infrastructure-down:
+	@echo "Stopping infrastructure services..."
+	@docker-compose -f docker-compose.infrastructure.yml down
+
+# Local development setup
+dev-local: infrastructure-up
+	@echo "Setting up local development environment..."
+	@make deps-all
+	@echo "Local development environment is ready!"
+	@echo "Infrastructure services are running in Docker."
+	@echo "You can now run services locally:"
+	@echo "  make api-gateway    # Run API Gateway locally"
+	@echo "  make url-manager    # Run URL Manager locally"
 
 # Build all services
 build-all:
@@ -86,12 +123,12 @@ dev-setup-all:
 
 # API Gateway service
 api-gateway:
-	@echo "Building and running API Gateway service..."
+	@echo "Building and running API Gateway service locally..."
 	@cd services/api-gateway && make run
 
 # URL Manager service
 url-manager:
-	@echo "Building and running URL Manager service..."
+	@echo "Building and running URL Manager service locally..."
 	@cd services/url-manager && make run
 
 # Install dependencies for all services
@@ -146,5 +183,6 @@ sqlc-check:
 	@cd shared/database && make sqlc-check
 
 create-kafka-topics:
-	docker exec scraping_kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic scraping-tasks --partitions 1 --replication-factor 1
-	# Add more topics as needed (e.g. scraping-results, url-updates)
+	docker exec scraper-kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic scraping-requests --partitions 1 --replication-factor 1
+	docker exec scraper-kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic scraping-results --partitions 1 --replication-factor 1
+	docker exec scraper-kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic url-updates --partitions 1 --replication-factor 1

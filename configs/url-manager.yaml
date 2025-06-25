@@ -14,7 +14,7 @@ database:
 
 kafka:
   brokers:
-    - kafka:29092
+    - localhost:9092
   topics:
     scraping_requests: scraping-requests
     scraping_results: scraping-results
