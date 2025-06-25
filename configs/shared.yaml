@@ -1,0 +1,39 @@
+# Shared Configuration
+# Common settings used across all services
+
+database:
+  host: localhost
+  port: 5432
+  user: scraper
+  password: scraper
+  database: scraping_db
+  ssl_mode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  migration_path: ./sql/schema
+
+kafka:
+  brokers:
+    - localhost:9092
+  group_id: scraper-group
+  auto_offset_reset: earliest
+  enable_auto_commit: true
+  auto_commit_interval: 1s
+  session_timeout: 30s
+  heartbeat_interval: 3s
+  max_poll_records: 500
+  max_poll_interval: 5m
+  retry_backoff: 100ms
+  retry_max_attempts: 3
+
+logging:
+  level: info
+  format: json
+  output: stdout
+  include_caller: false
+
+tracing:
+  enabled: false
+  service_name: scraper-service
+  jaeger_url: http://localhost:14268/api/traces 

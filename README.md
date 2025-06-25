@@ -1,460 +1,369 @@
-# Go Scraping Project
+# Go Scraping Project - Multi-Project Monorepo
 
-A microservices-based web scraping platform built with Go, featuring event-driven architecture using Kafka, PostgreSQL for data persistence, and clean architecture principles.
+A microservices-based web scraping platform built with Go, following clean architecture principles and using Kafka for event-driven communication.
 
-## 🏗️ Architecture Overview
+## Project Structure
+
+This project follows a **multi-project monorepo** structure where each service has its own `go.mod`, Dockerfile, and Makefile while sharing common code through a shared package.
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   API Gateway   │    │  URL Manager    │    │   Scraper       │
-│   (Port 8082)   │◄──►│  (Background)   │───►│   (Future)      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   PostgreSQL    │    │     Kafka       │    │   Parser        │
-│   (Local)       │    │   (Port 9092)   │    │   (Future)      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+go_scraping_project/
+├── shared/                    # Shared packages used across all services
+│   ├── utils/                # Common utilities (time, validation, etc.)
+│   ├── models/               # Shared domain models
+│   ├── config/               # Shared configuration structures
+│   ├── database/             # Shared database functionality
+│   │   ├── connection.go     # Database connection management
+│   │   ├── migrations.go     # Migration utilities
+│   │   ├── repository.go     # Repository interfaces
+│   │   ├── sqlc.yaml         # SQLC configuration
+│   │   └── Makefile          # Database operations
+│   └── go.mod                # Shared dependencies
+├── services/                 # Individual microservices
+│   ├── api-gateway/          # API Gateway service
+│   │   ├── handlers/         # HTTP handlers
+│   │   ├── main.go           # Service entry point
+│   │   ├── go.mod            # Service-specific dependencies
+│   │   ├── Dockerfile        # Service-specific Docker image
+│   │   └── Makefile          # Service-specific build commands
+│   ├── url-manager/          # URL Manager service
+│   │   ├── handlers/         # HTTP handlers
+│   │   ├── services/         # Business logic
+│   │   ├── repositories/     # Data access layer
+│   │   ├── main.go           # Service entry point
+│   │   ├── go.mod            # Service-specific dependencies
+│   │   ├── Dockerfile        # Service-specific Docker image
+│   │   └── Makefile          # Service-specific build commands
+│   ├── scraper/              # Web Scraper service (planned)
+│   ├── parser/               # Content Parser service (planned)
+│   └── storage/              # Data Storage service (planned)
+├── sql/                      # Database schema and migrations
+│   ├── schema/               # Migration files
+│   └── queries/              # SQLC query files
+├── monitoring/               # Monitoring configuration
+├── docker-compose.yml        # Multi-service orchestration
+├── Makefile                  # Top-level build commands
+└── README.md                 # This file
 ```
+
+## Architecture
 
 ### Services
 
-- **API Gateway** (`:8082`): REST API for managing URLs and viewing data
-- **URL Manager** (Background): Schedules and triggers scraping tasks
-- **Kafka** (`:9092`): Message broker for service communication
-- **PostgreSQL** (Local): Data persistence
-- **Kafka UI** (`:8080`): Web interface for monitoring Kafka
+1. **API Gateway** (`:8080`) - Central entry point for external clients
+2. **URL Manager** (`:8081`) - Manages URLs to be scraped and scheduling
+3. **Scraper** (planned) - Performs actual web scraping
+4. **Parser** (planned) - Parses and structures scraped content
+5. **Storage** (planned) - Stores and retrieves parsed data
 
-## 🚀 Quick Start
+### Infrastructure
+
+- **PostgreSQL** (`:5432`) - Primary database
+- **Kafka** (`:9092`) - Message broker for event-driven communication
+- **Zookeeper** (`:2181`) - Required for Kafka
+- **Kafka UI** (`:8080`) - Web interface for Kafka management
+- **Prometheus** (`:9090`) - Metrics collection
+- **Grafana** (`:3000`) - Metrics visualization
+
+## Quick Start
 
 ### Prerequisites
 
 - Go 1.21+
-- Docker & Docker Compose
-- PostgreSQL (running locally on port 5432)
+- Docker and Docker Compose
+- Make
+- PostgreSQL (for local development)
 
-### 1. Setup Database
+### Development Setup
 
-```bash
-# Create database user and database
-psql -h localhost -U aazriel -d postgres -c "CREATE USER scraper WITH PASSWORD 'scraper_password';"
-psql -h localhost -U aazriel -d postgres -c "CREATE DATABASE scraper OWNER scraper;"
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd go_scraping_project
+   ```
 
-# Run migrations
-DATABASE_URL="postgres://scraper:scraper_password@localhost:5432/scraper?sslmode=disable" make migrate-up
-```
+2. **Setup database**
+   ```bash
+   # Start PostgreSQL
+   docker-compose up -d postgres
+   
+   # Setup database (migrations + code generation)
+   make db-setup
+   ```
 
-### 2. Deploy Services
+3. **Setup all services**
+   ```bash
+   make dev-setup-all
+   ```
 
-```bash
-# Start all services
-docker-compose -f docker-compose.local.yml up -d
+4. **Start infrastructure**
+   ```bash
+   docker-compose up -d zookeeper kafka
+   ```
 
-# Check service status
-docker-compose -f docker-compose.local.yml ps
-```
+5. **Run services individually**
+   ```bash
+   # Run API Gateway
+   make api-gateway
+   
+   # Run URL Manager (in another terminal)
+   make url-manager
+   ```
 
-### 3. Verify Deployment
+### Docker Deployment
 
-```bash
-# Check API Gateway health
-curl http://localhost:8082/health
+1. **Build and run all services**
+   ```bash
+   make docker-build-all
+   docker-compose up -d
+   ```
 
-# Check URL Manager logs
-docker-compose -f docker-compose.local.yml logs url-manager
-```
+2. **View logs**
+   ```bash
+   docker-compose logs -f
+   ```
 
-## 📖 Usage Guide
+3. **Stop all services**
+   ```bash
+   docker-compose down
+   ```
 
-### API Endpoints
+## Service Development
 
-#### Health Check
-```bash
-curl http://localhost:8082/health
-```
+### Working with Individual Services
 
-#### URL Management
-
-**Create a URL for scraping:**
-```bash
-curl -X POST http://localhost:8082/api/v1/urls \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://example.com",
-    "frequency": "hourly",
-    "description": "Example website for scraping"
-  }'
-```
-
-**Get all URLs:**
-```bash
-curl http://localhost:8082/api/v1/urls
-```
-
-**Get URL by ID:**
-```bash
-curl http://localhost:8082/api/v1/urls/{url_id}
-```
-
-**Update URL:**
-```bash
-curl -X PUT http://localhost:8082/api/v1/urls/{url_id} \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://updated-example.com",
-    "frequency": "daily",
-    "description": "Updated description"
-  }'
-```
-
-**Delete URL:**
-```bash
-curl -X DELETE http://localhost:8082/api/v1/urls/{url_id}
-```
-
-**Trigger scraping for a URL:**
-```bash
-curl -X POST http://localhost:8082/api/v1/urls/{url_id}/trigger
-```
-
-**Bulk trigger scraping:**
-```bash
-curl -X POST http://localhost:8082/api/v1/urls/bulk-trigger \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url_ids": ["url_id_1", "url_id_2", "url_id_3"]
-  }'
-```
-
-### Data Endpoints
-
-**Get scraping data:**
-```bash
-curl http://localhost:8082/api/v1/data
-```
-
-**Get data by URL ID:**
-```bash
-curl http://localhost:8082/api/v1/data/url/{url_id}
-```
-
-### Metrics Endpoints
-
-**Get service metrics:**
-```bash
-curl http://localhost:8082/api/v1/metrics
-```
-
-**Get scraping statistics:**
-```bash
-curl http://localhost:8082/api/v1/metrics/scraping
-```
-
-## 🔍 Monitoring & Debugging
-
-### View Service Logs
+Each service can be developed independently:
 
 ```bash
-# All services
-docker-compose -f docker-compose.local.yml logs -f
+# Navigate to a service
+cd services/api-gateway
 
-# Specific service
-docker-compose -f docker-compose.local.yml logs -f url-manager
-docker-compose -f docker-compose.local.yml logs -f api-gateway
-
-# Using Docker directly
-docker logs -f scraping_url_manager
-docker logs -f scraping_api_gateway
-```
-
-### Kafka Monitoring
-
-**Kafka UI (Web Interface):**
-- Open [http://localhost:8080](http://localhost:8080)
-- View topics, messages, and consumer groups
-- Monitor message flow between services
-
-**Kafka CLI:**
-```bash
-# List topics
-docker exec scraping_kafka kafka-topics --bootstrap-server localhost:9092 --list
-
-# View messages in a topic
-docker exec scraping_kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic scraping-tasks --from-beginning
-```
-
-### Database Queries
-
-```bash
-# Connect to database
-psql -h localhost -U scraper -d scraper
-
-# View URLs
-SELECT * FROM urls;
-
-# View scraping tasks
-SELECT * FROM scraping_tasks;
-
-# View recent scraping activity
-SELECT url_id, status, created_at, updated_at 
-FROM scraping_tasks 
-ORDER BY created_at DESC 
-LIMIT 10;
-```
-
-## 🛠️ Development
-
-### Project Structure
-
-```
-go_scraping_project/
-├── cmd/                    # Application entrypoints
-│   ├── api-gateway/       # API Gateway service
-│   └── url-manager/       # URL Manager service
-├── internal/              # Private application code
-│   ├── api-gateway/       # API Gateway logic
-│   ├── url-manager/       # URL Manager logic
-│   ├── database/          # Database queries (sqlc)
-│   ├── domain/            # Domain models and interfaces
-│   └── config/            # Configuration management
-├── pkg/                   # Public packages
-│   ├── database/          # Database connection
-│   ├── kafka/             # Kafka producer/consumer
-│   └── observability/     # Logging and metrics
-├── sql/                   # Database migrations
-│   └── schema/            # SQL schema files
-├── configs/               # Configuration files
-└── docker-compose.local.yml
-```
-
-### Common Commands
-
-```bash
-# Build services
-make build-service SERVICE=url-manager
-make build-service SERVICE=api-gateway
-
-# Run services locally
-make run-service SERVICE=url-manager
-make run-service SERVICE=api-gateway
+# Install dependencies
+make deps
 
 # Run tests
 make test
+
+# Build the service
+make build
+
+# Run the service
+make run
 
 # Format code
 make fmt
 
 # Lint code
 make lint
+```
 
-# Database migrations
-make migrate-up
-make migrate-down
+### Adding a New Service
 
-# Generate sqlc code
+1. Create a new directory in `services/`
+2. Copy the structure from an existing service
+3. Update the service-specific `go.mod` with required dependencies
+4. Add the service to the top-level `Makefile`
+5. Update `docker-compose.yml` if needed
+
+### Shared Code
+
+Common utilities and models are in the `shared/` directory:
+
+- `shared/utils/` - Time utilities, validation, etc.
+- `shared/models/` - Domain models used across services
+- `shared/config/` - Configuration structures
+- `shared/database/` - Database connection, migrations, and repository interfaces
+
+## Database Operations
+
+### Database Setup
+
+```bash
+# Setup database (migrations + code generation)
+make db-setup
+
+# Run migrations only
+make db-migrate-up
+
+# Rollback last migration
+make db-migrate-down
+
+# Show migration status
+make db-migrate-status
+
+# Generate SQLC code only
 make sqlc-generate
+
+# Check SQLC configuration
+make sqlc-check
 ```
 
-### Configuration
+### Database Configuration
 
-The application uses a hierarchical configuration system:
+The database is shared across all services and configured through environment variables:
 
-1. **Defaults** (hardcoded in `internal/config/config.go`)
-2. **Config file** (`configs/config.yaml`)
-3. **Environment variables** (with `SCRAPING_` prefix)
+- `DATABASE_URL` - Full PostgreSQL connection string
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` - Individual connection parameters
+- `MIGRATIONS_DIR` - Migrations directory (default: sql/schema)
 
-**Environment Variables:**
-```bash
-# Database
-SCRAPING_DATABASE_HOST=host.docker.internal
-SCRAPING_DATABASE_PORT=5432
-SCRAPING_DATABASE_USER=scraper
-SCRAPING_DATABASE_PASSWORD=scraper_password
-SCRAPING_DATABASE_NAME=scraper
+### Using Shared Database
 
-# Kafka
-SCRAPING_KAFKA_BROKERS=kafka:29092
-SCRAPING_KAFKA_GROUP_ID=url-manager-group
+```go
+import "go_scraping_project/shared/database"
 
-# Server
-SCRAPING_SERVER_PORT=8080
-SCRAPING_LOG_LEVEL=info
+// Connect to database
+db, err := database.Connect()
+if err != nil {
+    log.Fatal(err)
+}
+defer db.Close()
+
+// Run migrations
+err = database.RunMigrations(db)
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
-## 📊 Example Workflows
+## API Endpoints
 
-### 1. Basic URL Scraping Setup
+### API Gateway (`:8080`)
 
-```bash
-# 1. Create a URL for scraping
-curl -X POST http://localhost:8082/api/v1/urls \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://news.ycombinator.com",
-    "frequency": "hourly",
-    "description": "Hacker News homepage"
-  }'
+- `GET /health` - Health check
+- `GET /urls` - List all URLs
+- `POST /urls` - Create a new URL
+- `GET /urls/{id}` - Get URL by ID
+- `PUT /urls/{id}` - Update URL
+- `DELETE /urls/{id}` - Delete URL
 
-# 2. Check the URL was created
-curl http://localhost:8082/api/v1/urls
+### URL Manager (`:8081`)
 
-# 3. Trigger immediate scraping
-curl -X POST http://localhost:8082/api/v1/urls/{url_id}/trigger
+- `GET /health` - Health check
+- `GET /urls` - List all URLs
+- `POST /urls` - Create a new URL
+- `GET /urls/{id}` - Get URL by ID
+- `PUT /urls/{id}` - Update URL
+- `DELETE /urls/{id}` - Delete URL
+- `POST /urls/{id}/schedule` - Schedule URL for scraping
 
-# 4. Monitor Kafka for messages
-docker exec scraping_kafka kafka-console-consumer \
-  --bootstrap-server localhost:9092 \
-  --topic scraping-tasks \
-  --from-beginning
-```
+## Configuration
 
-### 2. Bulk URL Management
+### Environment Variables
 
-```bash
-# 1. Create multiple URLs
-curl -X POST http://localhost:8082/api/v1/urls \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://github.com/trending",
-    "frequency": "daily",
-    "description": "GitHub trending repositories"
-  }'
+Each service can be configured using environment variables:
 
-curl -X POST http://localhost:8082/api/v1/urls \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://stackoverflow.com/questions",
-    "frequency": "daily",
-    "description": "Stack Overflow questions"
-  }'
+- `DATABASE_URL` - PostgreSQL connection string
+- `KAFKA_BROKERS` - Comma-separated list of Kafka brokers
+- `LOG_LEVEL` - Logging level (debug, info, warn, error)
 
-# 2. Get all URLs
-curl http://localhost:8082/api/v1/urls
+### Database Configuration
 
-# 3. Trigger scraping for all URLs
-curl -X POST http://localhost:8082/api/v1/urls/bulk-trigger \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url_ids": ["url_id_1", "url_id_2"]
-  }'
-```
+The database schema is automatically applied when the PostgreSQL container starts. Schema files are located in `sql/schema/`.
 
-### 3. Monitoring and Debugging
+## Testing
+
+### Running Tests
 
 ```bash
-# 1. Check service health
-curl http://localhost:8082/health
+# Test all services
+make test-all
 
-# 2. View service logs
-docker-compose -f docker-compose.local.yml logs -f url-manager
+# Test specific service
+cd services/api-gateway && make test
 
-# 3. Check Kafka topics
-docker exec scraping_kafka kafka-topics --bootstrap-server localhost:9092 --list
-
-# 4. Monitor Kafka UI
-# Open http://localhost:8080 in your browser
-
-# 5. Check database
-psql -h localhost -U scraper -d scraper -c "SELECT * FROM urls;"
+# Test with coverage
+cd services/api-gateway && make test-coverage
 ```
 
-## 🔧 Troubleshooting
+### Test Structure
+
+Each service has its own test files:
+- Unit tests in the same package as the code
+- Integration tests in `*_test.go` files
+- Mock implementations for external dependencies
+
+## Monitoring
+
+### Metrics
+
+Services expose Prometheus metrics on `/metrics` endpoints.
+
+### Logging
+
+All services use structured JSON logging with correlation IDs for request tracing.
+
+### Health Checks
+
+Each service provides a `/health` endpoint for monitoring.
+
+## Development Workflow
+
+1. **Feature Development**
+   - Create a feature branch
+   - Develop in the specific service directory
+   - Write tests for new functionality
+   - Update shared code if needed
+
+2. **Database Changes**
+   - Create migration files in `sql/schema/`
+   - Update SQLC queries in `sql/queries/`
+   - Run `make db-setup` to apply changes
+   - Update repository implementations if needed
+
+3. **Testing**
+   - Run unit tests: `make test`
+   - Run integration tests: `make test-integration`
+   - Check code quality: `make lint`
+
+4. **Building**
+   - Build individual service: `make build`
+   - Build all services: `make build-all`
+
+5. **Deployment**
+   - Build Docker images: `make docker-build-all`
+   - Deploy with Docker Compose: `docker-compose up -d`
+
+## Contributing
+
+1. Follow Go best practices and the project's coding standards
+2. Write tests for all new functionality
+3. Update documentation as needed
+4. Use conventional commit messages
+5. Ensure all tests pass before submitting a PR
+
+## Troubleshooting
 
 ### Common Issues
 
-**1. Database Connection Failed**
-```bash
-# Check if PostgreSQL is running
-pg_isready -h localhost -p 5432
+1. **Port conflicts**: Ensure ports 8080, 8081, 5432, 9092 are available
+2. **Database connection**: Wait for PostgreSQL to fully start before running services
+3. **Kafka connection**: Ensure Zookeeper is running before starting Kafka
+4. **Migration failures**: Check migration file syntax and database permissions
 
-# Verify database and user exist
-psql -h localhost -U scraper -d scraper -c "SELECT 1;"
+### Logs
+
+```bash
+# View all logs
+docker-compose logs -f
+
+# View specific service logs
+docker-compose logs -f api-gateway
+docker-compose logs -f url-manager
 ```
 
-**2. Kafka Connection Issues**
-```bash
-# Check Kafka health
-docker-compose -f docker-compose.local.yml logs kafka
+### Database Issues
 
-# Verify Kafka topics
-docker exec scraping_kafka kafka-topics --bootstrap-server localhost:9092 --list
+```bash
+# Check database connection
+psql "$DATABASE_URL" -c "SELECT 1;"
+
+# Check migration status
+make db-migrate-status
+
+# Reset database (careful!)
+make db-reset
 ```
 
-**3. Service Won't Start**
-```bash
-# Check service logs
-docker-compose -f docker-compose.local.yml logs -f url-manager
+## License
 
-# Verify configuration
-docker exec scraping_url_manager env | grep SCRAPING
-```
-
-**4. Build Failures**
-```bash
-# Update dependencies
-go mod tidy
-
-# Rebuild
-docker-compose -f docker-compose.local.yml build url-manager
-```
-
-### Log Levels
-
-Set log level via environment variable:
-```bash
-SCRAPING_LOG_LEVEL=debug  # More verbose logging
-SCRAPING_LOG_LEVEL=info   # Default level
-SCRAPING_LOG_LEVEL=warn   # Warnings and errors only
-SCRAPING_LOG_LEVEL=error  # Errors only
-```
-
-## 🚀 Production Deployment
-
-For production deployment, consider:
-
-1. **Security**: Use proper secrets management
-2. **Monitoring**: Add Prometheus/Grafana
-3. **Scaling**: Use Kubernetes or Docker Swarm
-4. **Backup**: Set up database backups
-5. **SSL**: Use HTTPS for API endpoints
-
-## 📝 API Reference
-
-### URL Management
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/urls` | Create a new URL |
-| GET | `/api/v1/urls` | List all URLs |
-| GET | `/api/v1/urls/{id}` | Get URL by ID |
-| PUT | `/api/v1/urls/{id}` | Update URL |
-| DELETE | `/api/v1/urls/{id}` | Delete URL |
-| POST | `/api/v1/urls/{id}/trigger` | Trigger scraping |
-| POST | `/api/v1/urls/bulk-trigger` | Bulk trigger scraping |
-
-### Data Management
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/data` | Get all scraping data |
-| GET | `/api/v1/data/url/{id}` | Get data by URL ID |
-
-### System
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/api/v1/metrics` | Service metrics |
-| GET | `/api/v1/metrics/scraping` | Scraping statistics |
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details. 
+[Add your license information here] 

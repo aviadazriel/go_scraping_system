@@ -1,0 +1,68 @@
+# URL Manager Configuration
+# Settings specific to the URL Manager service
+
+server:
+  port: 8081
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 60s
+
+# Inherit shared configurations
+database:
+  # Inherits from shared.yaml
+  # Can override specific settings here if needed
+
+kafka:
+  # Inherits from shared.yaml
+  # Can override specific settings here if needed
+  topics:
+    scraping_requests: scraping-requests
+    scraping_results: scraping-results
+    url_updates: url-updates
+
+logging:
+  # Inherits from shared.yaml
+  # Can override specific settings here if needed
+  level: info  # URL Manager specific log level
+
+# Scraping configuration
+scraping:
+  default_timeout: 30s
+  default_user_agent: "GoScraper/1.0 (https://github.com/your-repo/go-scraping-project)"
+  default_rate_limit: 1
+  max_retries: 3
+  retry_delay: 5s
+  html_storage_path: ./data/html
+  max_concurrent_tasks: 10
+  respect_robots_txt: true
+  request_headers:
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    Accept-Language: "en-US,en;q=0.5"
+    Accept-Encoding: "gzip, deflate"
+    Connection: "keep-alive"
+
+# URL scheduling
+scheduler:
+  enabled: true
+  check_interval: 1m
+  max_pending_urls: 1000
+  batch_size: 50
+
+# Worker pool
+workers:
+  count: 5
+  queue_size: 1000
+  idle_timeout: 30s
+
+# Health check settings
+health:
+  enabled: true
+  path: /health
+  readiness_path: /ready
+  liveness_path: /live
+  timeout: 5s
+
+metrics:
+  enabled: true
+  port: 9091
+  path: /metrics 
