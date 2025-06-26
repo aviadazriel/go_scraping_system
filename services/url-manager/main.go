@@ -16,17 +16,35 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func main() {
-	// Load configuration using shared config loader
-	loader := config.NewLoader()
-	if err := loader.LoadServiceConfig("url-manager"); err != nil {
-		logrus.WithError(err).Fatal("Failed to load configuration")
+// getDatabaseURL returns the database connection URL, prioritizing environment variables over config
+func getDatabaseURL(loader *config.Loader) string {
+	// Check if DATABASE_URL is set in environment
+	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
+		return databaseURL
 	}
 
-	// Load environment variables
-	loader.LoadFromEnv()
+	// Build from config if not in environment
+	dbHost := loader.GetString("database.host")
+	dbPort := loader.GetInt("database.port")
+	dbUser := loader.GetString("database.user")
+	dbPassword := loader.GetString("database.password")
+	dbName := loader.GetString("database.db_name")
+	dbSSLMode := loader.GetString("database.ssl_mode")
 
-	// Initialize logger based on config
+	// Set defaults
+	if dbName == "" {
+		dbName = "scraping_db"
+	}
+	if dbSSLMode == "" {
+		dbSSLMode = "disable"
+	}
+
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		dbUser, dbPassword, dbHost, dbPort, dbName, dbSSLMode)
+}
+
+// getLogger initializes and configures a logger based on configuration
+func getLogger(loader *config.Loader) *logrus.Logger {
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
@@ -43,29 +61,25 @@ func main() {
 	}
 	logger.SetLevel(level)
 
-	// Set DATABASE_URL environment variable for shared database package
-	// Prioritize environment variable over config file
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		// Fallback to building from config
-		dbHost := loader.GetString("database.host")
-		dbPort := loader.GetInt("database.port")
-		dbUser := loader.GetString("database.user")
-		dbPassword := loader.GetString("database.password")
-		dbName := loader.GetString("database.db_name")
-		dbSSLMode := loader.GetString("database.ssl_mode")
+	return logger
+}
 
-		if dbName == "" {
-			dbName = "scraping_db" // fallback
-		}
-		if dbSSLMode == "" {
-			dbSSLMode = "disable" // fallback
-		}
-
-		databaseURL = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
-			dbUser, dbPassword, dbHost, dbPort, dbName, dbSSLMode)
-		os.Setenv("DATABASE_URL", databaseURL)
+func main() {
+	// Load configuration using shared config loader
+	loader := config.NewLoader()
+	if err := loader.LoadServiceConfig("url-manager"); err != nil {
+		logrus.WithError(err).Fatal("Failed to load configuration")
 	}
+
+	// Load environment variables
+	loader.LoadFromEnv()
+
+	// Initialize logger
+	logger := getLogger(loader)
+
+	// Get database URL and set environment variable
+	databaseURL := getDatabaseURL(loader)
+	os.Setenv("DATABASE_URL", databaseURL)
 
 	// Initialize database connection
 	db, err := database.Connect()
